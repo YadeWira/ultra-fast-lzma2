@@ -1,6 +1,11 @@
-SRC = $(wildcard ../*.c) ../fuzzer/datagen.c bench.c
+LIBSRC = $(wildcard ../*.c)
+SRC = $(LIBSRC) ../fuzzer/datagen.c bench.c curve.c
 OBJ = $(SRC:.c=.o)
 DEP = $(OBJ:.o=.d)
+
+# bench needs datagen, curve does not
+BENCHOBJ = $(LIBSRC:.c=.o) ../fuzzer/datagen.o bench.o
+CURVEOBJ = $(LIBSRC:.c=.o) curve.o
 
 # Use -fPIC for obj compatibility with shared lib build
 CFLAGS:=-Wall -O2 -pthread -fPIC
@@ -40,16 +45,24 @@ endif
 
 ifeq ($(x86_64),1)
 	CFLAGS+=-DLZMA2_DEC_OPT
-	OBJ+=../lzma_dec_x86_64.o
+	BENCHOBJ+=../lzma_dec_x86_64.o
+	CURVEOBJ+=../lzma_dec_x86_64.o
 endif
 
 ifeq ($(arm64),1)
 	CFLAGS+=-DLZMA2_DEC_OPT
-	OBJ+=../lzma_dec_arm64.o
+	BENCHOBJ+=../lzma_dec_arm64.o
+	CURVEOBJ+=../lzma_dec_arm64.o
 endif
 
-bench : $(OBJ)
-	$(CC) -pthread -o bench$(EXT) $(OBJ)
+.PHONY: all
+all : bench curve
+
+bench : $(BENCHOBJ)
+	$(CC) -pthread -o bench$(EXT) $(BENCHOBJ)
+
+curve : $(CURVEOBJ)
+	$(CC) -pthread -o curve$(EXT) $(CURVEOBJ)
 
 -include $(DEP)
 
@@ -57,4 +70,4 @@ bench : $(OBJ)
 	@$(CC) $(CFLAGS) $< -MM -MT $(@:.d=.o) >$@
 
 clean:
-	rm -f bench$(EXT) $(OBJ) $(DEP)
+	rm -f bench$(EXT) curve$(EXT) $(OBJ) $(DEP)

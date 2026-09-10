@@ -71,6 +71,24 @@ which is also how the library is cross-compiled:
 
     make CC=aarch64-linux-gnu-gcc arm64=1
 
+### Measuring
+
+The library's design goal is stated as a claim about a curve: more ratio at more speed than 7-Zip's
+LZMA2. `bench/curve.c` draws that curve reproducibly. `make -C bench curve` builds it, and it writes
+one TSV row per compression level, so two runs are directly comparable with `diff` and the output can
+be plotted unchanged:
+
+    ./bench/curve -n3 /path/to/silesia/*
+
+It compresses the whole corpus in one pass, then decompresses it in one pass, repeats each pass `-n`
+times and keeps the fastest, which is the run least disturbed by everything else on the machine. It
+is single threaded by default so that runs stay comparable, and it verifies every decompressed file
+against its source, so a measurement that reports a number is also a correctness check.
+
+Use a corpus of large files. On many small files the per-call overhead dominates and the number
+measured is not encoder throughput: the same build reports 65 MB/s decompression on a corpus
+averaging 81 KB per file and 92 MB/s on a single 29 MB file.
+
 The bench, fuzzer and test directories have makefiles for these programs. The CMake file present in earlier releases does not
 have an installation script so is not currently included.
 
