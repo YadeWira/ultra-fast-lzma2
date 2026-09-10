@@ -85,9 +85,22 @@ times and keeps the fastest, which is the run least disturbed by everything else
 is single threaded by default so that runs stay comparable, and it verifies every decompressed file
 against its source, so a measurement that reports a number is also a correctness check.
 
+Two things about it are easy to get wrong, and both change the answer rather than the presentation.
+
 Use a corpus of large files. On many small files the per-call overhead dominates and the number
 measured is not encoder throughput: the same build reports 65 MB/s decompression on a corpus
 averaging 81 KB per file and 92 MB/s on a single 29 MB file.
+
+Use `-s` for anything involving dictionary size. Without it the corpus is compressed file by file,
+so the useful dictionary is capped by the largest single file and levels differing only in
+dictionary size produce byte identical output. An archiver compresses a solid stream, which is also
+how the graph above was drawn, and it is the only mode in which this match finder's larger
+dictionary requirement is visible at all.
+
+Comparing against another implementation needs one more precaution: compare like with like. This
+library substitutes an assembler LZMA decoder on x86_64 and ARM64, and 7-Zip ships the same one, so
+a build of it without that decoder will look slower for reasons that have nothing to do with either
+design. Build with `x86_64=0 arm64=0` for a C-to-C comparison.
 
 The bench, fuzzer and test directories have makefiles for these programs. The CMake file present in earlier releases does not
 have an installation script so is not currently included.

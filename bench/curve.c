@@ -14,6 +14,15 @@
  * Output is one TSV row per (mode, level) on stdout, plus '#' comment lines
  * carrying the run's parameters, so two runs are directly comparable with
  * diff and the file can be fed to a plotter unchanged.
+ *
+ * -s measures the corpus as one solid stream instead of file by file, which is
+ * what an archiver actually does and what the published graph this library is
+ * measured against was drawn from. The difference is not cosmetic: file by
+ * file, the useful dictionary is capped by the largest single file, so above
+ * that size the dictionary stops mattering and levels that differ only in
+ * dictionary size produce byte identical output. Any question about dictionary
+ * size, and therefore the known 2x dictionary caveat of this match finder,
+ * can only be asked in solid mode.
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -35,6 +44,7 @@ typedef struct {
 
 static bfile files[MAX_FILES];
 static unsigned nbFiles = 0;
+static int solid = 0;
 static unsigned char *decBuf = NULL;
 static size_t decCap = 0;
 
@@ -101,6 +111,7 @@ static void usage(const char *prog)
     printf("  -b#   first level (default 1)\n");
     printf("  -e#   last level (default max)\n");
     printf("  -H    also measure the high-compression table\n");
+    printf("  -s    measure the corpus as one solid stream, as an archiver would\n");
     printf("  -h    this help\n");
     printf("\nSingle threaded by default so that runs are comparable.\n");
 }
@@ -119,6 +130,7 @@ int main(int argc, char **argv)
             case 'b': firstLevel = atoi(argv[i] + 2); break;
             case 'e': lastLevel = atoi(argv[i] + 2); break;
             case 'H': doHigh = 1; break;
+            case 's': solid = 1; break;
             case 'h': usage(argv[0]); return 0;
             default: fprintf(stderr, "curve: unknown option %s\n", argv[i]); return 1;
         }
@@ -130,6 +142,28 @@ int main(int argc, char **argv)
 
     if (nbFiles == 0) { usage(argv[0]); return 1; }
 
+    if (solid) {
+        /* fold the corpus into a single input, in the order given */
+        size_t total = 0;
+        for (unsigned i = 0; i < nbFiles; i++) total += files[i].srcSize;
+        unsigned char *all = malloc(total);
+        if (!all) { fprintf(stderr, "curve: out of memory\n"); return 2; }
+        size_t at = 0;
+        for (unsigned i = 0; i < nbFiles; i++) {
+            memcpy(all + at, files[i].src, files[i].srcSize);
+            at += files[i].srcSize;
+            free(files[i].src); free(files[i].cmp); free(files[i].name);
+        }
+        files[0].name = strdup("<solid>");
+        files[0].src = all;
+        files[0].srcSize = total;
+        files[0].cmpCap = UF2_compressBound(total);
+        files[0].cmp = malloc(files[0].cmpCap);
+        if (!files[0].cmp) { fprintf(stderr, "curve: out of memory\n"); return 2; }
+        nbFiles = 1;
+        decCap = total;
+    }
+
     decBuf = malloc(decCap);
     if (!decBuf) { fprintf(stderr, "curve: out of memory\n"); return 2; }
 
@@ -137,7 +171,8 @@ int main(int argc, char **argv)
     for (unsigned i = 0; i < nbFiles; i++) corpusBytes += files[i].srcSize;
 
     printf("# uf-lzma2 %s\n", UF2_versionString());
-    printf("# corpus_files=%u corpus_bytes=%zu\n", nbFiles, corpusBytes);
+    printf("# corpus_files=%u corpus_bytes=%zu mode=%s\n",
+           nbFiles, corpusBytes, solid ? "solid" : "per-file");
     printf("# cthreads=%u dthreads=%u iterations=%u\n", cThreads, dThreads, iters);
     printf("mode\tlevel\tdict\tin_bytes\tout_bytes\tratio\tc_MBps\td_MBps\n");
     fflush(stdout);
