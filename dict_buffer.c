@@ -10,7 +10,7 @@
 
 #include <stdlib.h>
 #include "dict_buffer.h"
-#include "fl2_internal.h"
+#include "uf2_internal.h"
 
 #define ALIGNMENT_SIZE 16U
 #define ALIGNMENT_MASK (~(size_t)(ALIGNMENT_SIZE-1))
@@ -118,7 +118,7 @@ int DICT_update(DICT_buffer * const buf, size_t const added_size)
 }
 
 /* Read from input and write to the dict */
-void DICT_put(DICT_buffer * const buf, FL2_inBuffer * const input)
+void DICT_put(DICT_buffer * const buf, UF2_inBuffer * const input)
 {
     size_t const to_read = MIN(buf->size - buf->end, input->size - input->pos);
 
@@ -142,7 +142,7 @@ int DICT_hasUnprocessed(const DICT_buffer * const buf)
 }
 
 /* Get the buffer, overlap and end for compression */
-void DICT_getBlock(DICT_buffer * const buf, FL2_dataBlock * const block)
+void DICT_getBlock(DICT_buffer * const buf, UF2_dataBlock * const block)
 {
     block->data = buf->data[buf->index];
     block->start = buf->start;

@@ -13,7 +13,7 @@
 */
 
 
-// ---------- 7zAsm.S (inlineado; FL2 no distribuye los .S del SDK) ----------
+// ---------- 7zAsm.S, inlined: UF2 does not ship the SDK's shared .S files ----------
 
 #if defined(__clang_major__) && __clang_major__ >= 20
   // clang21 : error: identifier 'and' conflicts with a C++ keyword [-Wc++-keyword]
@@ -200,7 +200,7 @@ arm64 and arm use reverted c flag after subs/cmp instructions:
         .p2align 6,, (1 << 6) - 1
 .endm
 
-// ---------- fin de 7zAsm.S ----------
+// ---------- end of 7zAsm.S ----------
 
 	// .arch armv8-a
 	// .file        "LzmaDecOpt.c"
@@ -219,7 +219,7 @@ arm64 and arm use reverted c flag after subs/cmp instructions:
 #define LZMA_USE_4BYTES_FILL 1
 // #define LZMA_USE_2BYTES_COPY 1
 // #define LZMA_USE_CMOV_LZ_WRAP 1
-// FL2: LZMA2_prob es U32 salvo que se defina LZMA_DEC_PROB16 (ver lzma2_dec.h)
+// UF2: LZMA2_prob is U32 unless LZMA_DEC_PROB16 is defined. See lzma2_dec.h.
 #ifndef LZMA_DEC_PROB16
 #define _LZMA_PROB32 1
 #endif
@@ -847,10 +847,10 @@ arm64 and arm use reverted c flag after subs/cmp instructions:
   .error "Stop_Compiling_Bad_LZMA_PROBS"
 .endif
 
-// ---------- offsets de LZMA2_DCtx (lzma2_dec.h) ----------
-// FL2 reordeno los campos respecto de CLzmaDec y no guarda el puntero `probs`
-// (el array es inline al final del struct); si guarda `probs_1664`.
-// Ademas intercala `state2` entre `state` y `remain_len`.
+// ---------- LZMA2_DCtx offsets, see lzma2_dec.h ----------
+// UF2 reorders CLzmaDec's fields and keeps no `probs` pointer: that array is
+// inline at the end of the struct. It does keep `probs_1664`, and it inserts
+// `state2` between `state` and `remain_len`.
 .equ offset_lc            , 0
 .equ offset_lp            , 1
 .equ offset_pb            , 2
@@ -877,10 +877,10 @@ arm64 and arm use reverted c flag after subs/cmp instructions:
   .error "Incorrect offset_TOTAL_SIZE"
 .endif
 
-// kStartOffset del C de FL2 (lzma2_dec.h). El chain de offsets de ESTE asm
-// usa kStartOffset=0 con base `probs`, asi que hay que restarle 1664 entradas
-// a probs_1664 para obtener esa base. Ambos apuntan al mismo lugar fisico.
-.equ kFl2StartOffset , 1664
+// The C decoder's kStartOffset, see lzma2_dec.h. This asm's own offset chain
+// uses kStartOffset 0 with `probs` as the base, so subtracting 1664 entries
+// from probs_1664 yields that base: both index the same memory.
+.equ kUf2StartOffset , 1664
 
 
 .macro IsMatchBranch_Pre
@@ -974,7 +974,7 @@ _LZMA_decodeReal_3:
         p2_add  lc2_lpMask, t0
         
         LOAD_LZMA_VAR   probs_Spec, offset_probs_1664
-        sub_big probs_Spec, probs_Spec, (kFl2StartOffset << PSHIFT)
+        sub_big probs_Spec, probs_Spec, (kUf2StartOffset << PSHIFT)
         LOAD_LZMA_VAR   checkDicSize, offset_checkDicSize
         LOAD_LZMA_VAR   processedPos, offset_processedPos
         LOAD_LZMA_VAR   state, offset_state
@@ -1242,8 +1242,8 @@ copy_match:
 
     // if ((rem = limit - dicPos) == 0) break // return SZ_ERROR_DATA;
         subs    cnt_R, limit, dicPos
-        // FL2: el decoder C devuelve error aca (lzma2_dec.c:671).
-        // Mantenemos C y ASM equivalentes.
+        // The C decoder returns an error here (lzma2_dec.c:671). Keep the
+        // C and ASM decoders equivalent.
         jz      fin_dicPos_LIMIT
 
     // curLen = ((rem < len) ? (unsigned)rem : len);
@@ -1612,7 +1612,7 @@ fin_dicPos_LIMIT_REP_SHORT:
 */
 
 fin_dicPos_LIMIT:
-        # strict mode: igual que el decoder C de FL2
+        # strict mode, matching the C decoder
         mov     sym, 1
         jmp     fin
 

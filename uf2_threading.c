@@ -17,11 +17,11 @@
 /* create fake symbol to avoid empty translation unit warning */
 int g_ZSTD_threading_useles_symbol;
 
-#include "fast-lzma2.h"
-#include "fl2_threading.h"
+#include "uf-lzma2.h"
+#include "uf2_threading.h"
 #include "util.h"
 
-#if !defined(FL2_SINGLETHREAD) && defined(_WIN32)
+#if !defined(UF2_SINGLETHREAD) && defined(_WIN32)
 
 /**
  * Windows minimalist Pthread Wrapper, based on :
@@ -38,12 +38,12 @@ int g_ZSTD_threading_useles_symbol;
 
 static unsigned __stdcall worker(void *arg)
 {
-    FL2_pthread_t* const thread = (FL2_pthread_t*) arg;
+    UF2_pthread_t* const thread = (UF2_pthread_t*) arg;
     thread->arg = thread->start_routine(thread->arg);
     return 0;
 }
 
-int FL2_pthread_create(FL2_pthread_t* thread, const void* unused,
+int UF2_pthread_create(UF2_pthread_t* thread, const void* unused,
             void* (*start_routine) (void*), void* arg)
 {
     (void)unused;
@@ -57,7 +57,7 @@ int FL2_pthread_create(FL2_pthread_t* thread, const void* unused,
         return 0;
 }
 
-int FL2_pthread_join(FL2_pthread_t thread, void **value_ptr)
+int UF2_pthread_join(UF2_pthread_t thread, void **value_ptr)
 {
     DWORD result;
 
@@ -75,17 +75,17 @@ int FL2_pthread_join(FL2_pthread_t thread, void **value_ptr)
     }
 }
 
-#endif   /* FL2_SINGLETHREAD */
+#endif   /* UF2_SINGLETHREAD */
 
-unsigned FL2_checkNbThreads(unsigned nbThreads)
+unsigned UF2_checkNbThreads(unsigned nbThreads)
 {
-#ifndef FL2_SINGLETHREAD
+#ifndef UF2_SINGLETHREAD
     if (nbThreads == 0) {
         nbThreads = UTIL_countPhysicalCores();
         nbThreads += !nbThreads;
     }
-    if (nbThreads > FL2_MAXTHREADS) {
-        nbThreads = FL2_MAXTHREADS;
+    if (nbThreads > UF2_MAXTHREADS) {
+        nbThreads = UF2_MAXTHREADS;
     }
 #else
     nbThreads = 1;

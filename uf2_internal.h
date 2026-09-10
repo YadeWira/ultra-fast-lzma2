@@ -9,8 +9,8 @@
  * You may select, at your option, one of the above-listed licenses.
  */
 
-#ifndef FL2_INTERNAL_H_
-#define FL2_INTERNAL_H_
+#ifndef UF2_INTERNAL_H_
+#define UF2_INTERNAL_H_
 
 
 /*-*************************************
@@ -28,15 +28,15 @@ extern "C" {
 /*-****************************************
 *  Error codes handling
 ******************************************/
-#define PREFIX(name) FL2_error_##name
-#define FL2_ERROR(name) ((size_t)-PREFIX(name))
+#define PREFIX(name) UF2_error_##name
+#define UF2_ERROR(name) ((size_t)-PREFIX(name))
 
 
 /*-*************************************
 *  Stream properties
 ***************************************/
-#define FL2_PROP_HASH_BIT 7
-#define FL2_LZMA_PROP_MASK 0x3FU
+#define UF2_PROP_HASH_BIT 7
+#define UF2_LZMA_PROP_MASK 0x3FU
 #ifndef NO_XXHASH
 #  define XXHASH_SIZEOF sizeof(XXH32_canonical_t)
 #endif
@@ -45,7 +45,7 @@ extern "C" {
 /*-*************************************
 *  Debug
 ***************************************/
-#if defined(FL2_DEBUG) && (FL2_DEBUG>=1)
+#if defined(UF2_DEBUG) && (UF2_DEBUG>=1)
 #  include <assert.h>
 #else
 #  ifndef assert
@@ -53,12 +53,12 @@ extern "C" {
 #  endif
 #endif
 
-#define FL2_STATIC_ASSERT(c) { enum { FL2_static_assert = 1/(int)(!!(c)) }; }
+#define UF2_STATIC_ASSERT(c) { enum { UF2_static_assert = 1/(int)(!!(c)) }; }
 
-#if defined(FL2_DEBUG) && (FL2_DEBUG>=2)
+#if defined(UF2_DEBUG) && (UF2_DEBUG>=2)
 #  include <stdio.h>
 extern int g_debuglog_enable;
-/* recommended values for FL2_DEBUG display levels :
+/* recommended values for UF2_DEBUG display levels :
  * 1 : no display, enables assert() only
  * 2 : reserved for currently active debugging path
  * 3 : events once per object lifetime (CCtx, CDict)
@@ -66,11 +66,11 @@ extern int g_debuglog_enable;
  * 5 : events once per block
  * 6 : events once per sequence (*very* verbose) */
 #  define RAWLOG(l, ...) {                                 \
-                if ((g_debuglog_enable) & (l<=FL2_DEBUG)) { \
+                if ((g_debuglog_enable) & (l<=UF2_DEBUG)) { \
                     fprintf(stderr, __VA_ARGS__);            \
             }   }
 #  define DEBUGLOG(l, ...) {                                 \
-                if ((g_debuglog_enable) & (l<=FL2_DEBUG)) { \
+                if ((g_debuglog_enable) & (l<=UF2_DEBUG)) { \
                     fprintf(stderr, __FILE__ ": ");          \
                     fprintf(stderr, __VA_ARGS__);            \
                     fprintf(stderr, " \n");                  \
@@ -88,8 +88,8 @@ extern int g_debuglog_enable;
 #undef MAX
 #define MIN(a,b) ((a)<(b) ? (a) : (b))
 #define MAX(a,b) ((a)>(b) ? (a) : (b))
-#define CHECK_F(f) do { size_t const errcod = f; if (FL2_isError(errcod)) return errcod; } while(0)  /* check and Forward error code */
-#define CHECK_E(f, e) do { size_t const errcod = f; if (FL2_isError(errcod)) return FL2_ERROR(e); } while(0)  /* check and send Error code */
+#define CHECK_F(f) do { size_t const errcod = f; if (UF2_isError(errcod)) return errcod; } while(0)  /* check and Forward error code */
+#define CHECK_E(f, e) do { size_t const errcod = f; if (UF2_isError(errcod)) return UF2_ERROR(e); } while(0)  /* check and send Error code */
 
 MEM_STATIC U32 ZSTD_highbit32(U32 val)
 {
@@ -121,4 +121,4 @@ MEM_STATIC U32 ZSTD_highbit32(U32 val)
 }
 #endif
 
-#endif   /* FL2_INTERNAL_H_ */
+#endif   /* UF2_INTERNAL_H_ */

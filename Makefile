@@ -9,17 +9,17 @@ RM:=rm -rf
 
 ASFLAGS :=
 
-SONAME:=libfast-lzma2.so.1
-REAL_NAME:=libfast-lzma2.so.1.0
-LINKER_NAME=libfast-lzma2.so
-STATIC_LIBNAME=libfast-lzma2.a
+SONAME:=libuf-lzma2.so.1
+REAL_NAME:=libuf-lzma2.so.1.0
+LINKER_NAME=libuf-lzma2.so
+STATIC_LIBNAME=libuf-lzma2.a
 
 x86_64:=0
 arm64:=0
 
 ifeq ($(OS),Windows_NT)
-	CFLAGS+=-DFL2_DLL_EXPORT=1
-	LINKER_NAME=libfast-lzma2.dll
+	CFLAGS+=-DUF2_DLL_EXPORT=1
+	LINKER_NAME=libuf-lzma2.dll
 	SONAME:=$(LINKER_NAME)
 	REAL_NAME:=$(LINKER_NAME)
 ifeq ($(PROCESSOR_ARCHITECTURE),AMD64)
@@ -55,7 +55,7 @@ ifeq ($(arm64),1)
 	OBJ+=lzma_dec_arm64.o
 endif
 
-libfast-lzma2 : $(OBJ)
+libuf-lzma2 : $(OBJ)
 	@echo "Build static & dynamic library."
 	$(CC) -shared -pthread -Wl,-soname,$(SONAME) -o $(REAL_NAME) $(OBJ)
 	$(AR) $(STATIC_LIBNAME) $(OBJ)
@@ -82,24 +82,24 @@ else
 	cd $(LIBDIR) && ln -sf $(REAL_NAME) $(LINKER_NAME)
 	ldconfig $(LIBDIR)
 	mkdir -p $(DESTDIR)$(PREFIX)/include
-	cp fast-lzma2.h $(DESTDIR)$(PREFIX)/include/
-	cp fl2_errors.h $(DESTDIR)$(PREFIX)/include/
+	cp uf-lzma2.h $(DESTDIR)$(PREFIX)/include/
+	cp uf2_errors.h $(DESTDIR)$(PREFIX)/include/
 endif
 
 .PHONY: uninstall
 uninstall:
 ifeq ($(OS),Windows_NT)
-	rm -f libfast-lzma2.dll
+	rm -f libuf-lzma2.dll
 else
 	rm -f $(LIBDIR)/$(LINKER_NAME)
 	rm -f $(LIBDIR)/$(REAL_NAME)
 	ldconfig $(LIBDIR)
-	rm -f $(DESTDIR)$(PREFIX)/include/fast-lzma2.h
-	rm -f $(DESTDIR)$(PREFIX)/include/fl2_errors.h
+	rm -f $(DESTDIR)$(PREFIX)/include/uf-lzma2.h
+	rm -f $(DESTDIR)$(PREFIX)/include/uf2_errors.h
 endif
 
 .PHONY: test
-test:libfast-lzma2
+test:libuf-lzma2
 	$(MAKE) -C ./test file_test
 	test/file_test radix_engine.h
 	@echo "File compression/decompression test completed."

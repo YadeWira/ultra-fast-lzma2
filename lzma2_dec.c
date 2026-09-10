@@ -4,8 +4,8 @@ Modified for FL2 by Conor McCarthy */
 
 #include <stdlib.h>
 #include <stddef.h>
-#include "fl2_errors.h"
-#include "fl2_internal.h"
+#include "uf2_errors.h"
+#include "uf2_internal.h"
 #include "lzma2_dec.h"
 #include "platform.h"
 
@@ -370,28 +370,28 @@ Out:
 
 /* The asm decoders hard-code these offsets into LZMA2_DCtx. Adding, removing or
    reordering a field above `probs` silently corrupts them, so check here. */
-#define FL2_CHECK_ASM_OFFSET(field, expect) \
-    FL2_STATIC_ASSERT(offsetof(LZMA2_DCtx, field) == (expect))
+#define UF2_CHECK_ASM_OFFSET(field, expect) \
+    UF2_STATIC_ASSERT(offsetof(LZMA2_DCtx, field) == (expect))
 
 MEM_STATIC void LZMA_checkAsmOffsets(void)
 {
-    FL2_CHECK_ASM_OFFSET(prop.lc,         0);
-    FL2_CHECK_ASM_OFFSET(prop.lp,         1);
-    FL2_CHECK_ASM_OFFSET(prop.pb,         2);
-    FL2_CHECK_ASM_OFFSET(prop.dic_size,   4);
-    FL2_CHECK_ASM_OFFSET(dic,             8);
-    FL2_CHECK_ASM_OFFSET(dic_pos,        16);
-    FL2_CHECK_ASM_OFFSET(dic_buf_size,   24);
-    FL2_CHECK_ASM_OFFSET(buf,            32);
-    FL2_CHECK_ASM_OFFSET(probs_1664,     40);
-    FL2_CHECK_ASM_OFFSET(range,          48);
-    FL2_CHECK_ASM_OFFSET(code,           52);
-    FL2_CHECK_ASM_OFFSET(processed_pos,  56);
-    FL2_CHECK_ASM_OFFSET(check_dic_size, 60);
-    FL2_CHECK_ASM_OFFSET(reps,           64);
-    FL2_CHECK_ASM_OFFSET(state,          80);
-    FL2_CHECK_ASM_OFFSET(state2,         84);
-    FL2_CHECK_ASM_OFFSET(remain_len,     88);
+    UF2_CHECK_ASM_OFFSET(prop.lc,         0);
+    UF2_CHECK_ASM_OFFSET(prop.lp,         1);
+    UF2_CHECK_ASM_OFFSET(prop.pb,         2);
+    UF2_CHECK_ASM_OFFSET(prop.dic_size,   4);
+    UF2_CHECK_ASM_OFFSET(dic,             8);
+    UF2_CHECK_ASM_OFFSET(dic_pos,        16);
+    UF2_CHECK_ASM_OFFSET(dic_buf_size,   24);
+    UF2_CHECK_ASM_OFFSET(buf,            32);
+    UF2_CHECK_ASM_OFFSET(probs_1664,     40);
+    UF2_CHECK_ASM_OFFSET(range,          48);
+    UF2_CHECK_ASM_OFFSET(code,           52);
+    UF2_CHECK_ASM_OFFSET(processed_pos,  56);
+    UF2_CHECK_ASM_OFFSET(check_dic_size, 60);
+    UF2_CHECK_ASM_OFFSET(reps,           64);
+    UF2_CHECK_ASM_OFFSET(state,          80);
+    UF2_CHECK_ASM_OFFSET(state2,         84);
+    UF2_CHECK_ASM_OFFSET(remain_len,     88);
 }
 
 int LZMA_decodeReal_3(LZMA2_DCtx *p, size_t limit, const BYTE *buf_limit);
@@ -786,7 +786,7 @@ static void LZMA_writeRem(LZMA2_DCtx *const p, size_t const limit)
 static size_t LZMA_decodeReal2(LZMA2_DCtx *const p, size_t const limit, const BYTE *const buf_limit)
 {
     if (p->buf == buf_limit && !LZMA_tryDummy(p))
-        return FL2_ERROR(corruption_detected);
+        return UF2_ERROR(corruption_detected);
     do
     {
         size_t limit2 = limit;
@@ -797,12 +797,12 @@ static size_t LZMA_decodeReal2(LZMA2_DCtx *const p, size_t const limit, const BY
                 limit2 = p->dic_pos + rem;
             if (p->processed_pos == 0)
                 if (p->code >= kBadRepCode)
-                    return FL2_ERROR(corruption_detected);
+                    return UF2_ERROR(corruption_detected);
         }
 
         do {
             if (LZMA_decodeReal_3(p, limit2, buf_limit) != 0)
-                return FL2_ERROR(corruption_detected);
+                return UF2_ERROR(corruption_detected);
         } while (p->dic_pos < limit2 && p->buf == buf_limit && LZMA_tryDummy(p));
 
         if (p->check_dic_size == 0 && p->processed_pos >= p->prop.dic_size)
@@ -814,7 +814,7 @@ static size_t LZMA_decodeReal2(LZMA2_DCtx *const p, size_t const limit, const BY
     if (p->remain_len > kMatchSpecLenStart)
         p->remain_len = kMatchSpecLenStart;
 
-    return FL2_error_no_error;
+    return UF2_error_no_error;
 }
 
 
@@ -864,7 +864,7 @@ static size_t LZMA_decodeToDic(LZMA2_DCtx *const p, size_t const dic_limit, cons
             return LZMA_STATUS_NEEDS_MORE_INPUT;
         }
         if (src[0] != 0)
-            return FL2_ERROR(corruption_detected);
+            return UF2_ERROR(corruption_detected);
         p->code =
             ((U32)src[1] << 24)
             | ((U32)src[2] << 16)
@@ -934,7 +934,7 @@ void LZMA_destructDCtx(LZMA2_DCtx *const p)
 size_t LZMA2_getDictSizeFromProp(BYTE const dict_prop)
 {
     if (dict_prop > 40)
-        return FL2_ERROR(corruption_detected);
+        return UF2_ERROR(corruption_detected);
 
     size_t const dict_size = (dict_prop == 40)
         ? (size_t)-1
@@ -963,7 +963,7 @@ size_t LZMA2_decMemoryUsage(size_t const dict_size)
 size_t LZMA2_initDecoder(LZMA2_DCtx *const p, BYTE const dict_prop, BYTE *const dic, size_t dic_buf_size)
 {
     size_t const dict_size = LZMA2_getDictSizeFromProp(dict_prop);
-    if (FL2_isError(dict_size))
+    if (UF2_isError(dict_size))
         return dict_size;
 
     if (dic == NULL) {
@@ -973,7 +973,7 @@ size_t LZMA2_initDecoder(LZMA2_DCtx *const p, BYTE const dict_prop, BYTE *const 
             LZMA_freeDict(p);
             p->dic = malloc(dic_buf_size);
             if (p->dic == NULL)
-                return FL2_ERROR(memory_allocation);
+                return UF2_ERROR(memory_allocation);
             p->ext_dic = 0;
         }
     }
@@ -993,7 +993,7 @@ size_t LZMA2_initDecoder(LZMA2_DCtx *const p, BYTE const dict_prop, BYTE *const 
     p->need_init_state2 = 1;
     p->need_init_prop = 1;
     LZMA_init(p);
-    return FL2_error_no_error;
+    return UF2_error_no_error;
 }
 
 static void LZMA_updateWithUncompressed(LZMA2_DCtx *const p, const BYTE *const src, size_t const size)
@@ -1068,7 +1068,7 @@ static size_t LZMA2_decodeChunkToDic(LZMA2_DCtx *const p, size_t const dic_limit
         src += len;
 
         if (p->state2 == LZMA2_STATE_ERROR)
-            return FL2_ERROR(corruption_detected);
+            return UF2_ERROR(corruption_detected);
         else if (p->state2 == LZMA2_STATE_CONTROL)
             return LZMA_STATUS_NEEDS_MORE_INPUT;
         else if (p->state2 == LZMA2_STATE_FINISHED)
@@ -1080,7 +1080,7 @@ static size_t LZMA2_decodeChunkToDic(LZMA2_DCtx *const p, size_t const dic_limit
             if (init_dic)
                 p->need_init_prop = p->need_init_state2 = 1;
             else if (p->need_init_dic)
-                return FL2_ERROR(corruption_detected);
+                return UF2_ERROR(corruption_detected);
             p->need_init_dic = 0;
             LZMA_initDicAndState(p, init_dic, 0);
         }
@@ -1089,7 +1089,7 @@ static size_t LZMA2_decodeChunkToDic(LZMA2_DCtx *const p, size_t const dic_limit
             BYTE const init_dic = (mode == 3);
             BYTE const init_state = (mode != 0);
             if ((!init_dic && p->need_init_dic) || (!init_state && p->need_init_state2))
-                return FL2_ERROR(corruption_detected);
+                return UF2_ERROR(corruption_detected);
 
             LZMA_initDicAndState(p, init_dic, init_state);
             p->need_init_dic = 0;
@@ -1102,7 +1102,7 @@ static size_t LZMA2_decodeChunkToDic(LZMA2_DCtx *const p, size_t const dic_limit
         size_t out_cur = dic_limit - dic_pos;
 
         if (out_cur == 0)
-            return (finish_mode == LZMA_FINISH_ANY) ? LZMA_STATUS_OUTPUT_FULL : FL2_ERROR(dstSize_tooSmall);
+            return (finish_mode == LZMA_FINISH_ANY) ? LZMA_STATUS_OUTPUT_FULL : UF2_ERROR(dstSize_tooSmall);
 
         if (out_cur > p->unpack_size)
             out_cur = p->unpack_size;
@@ -1139,20 +1139,20 @@ static size_t LZMA2_decodeChunkToDic(LZMA2_DCtx *const p, size_t const dic_limit
             p->pack_size -= in_cur;
             p->unpack_size -= p->dic_pos - dic_pos;
 
-            if (FL2_isError(res))
+            if (UF2_isError(res))
                 return res;
 
             /* error if decoder not finished but chunk output is complete */
             if (res != LZMA_STATUS_FINISHED && p->unpack_size == 0)
-                return FL2_ERROR(corruption_detected);
+                return UF2_ERROR(corruption_detected);
 
             /* Error conditions:
                1. need input but chunk is finished
                2. have output space, input not needed, but nothing was written*/
             if (res == LZMA_STATUS_NEEDS_MORE_INPUT)
-                return (p->pack_size == 0) ? FL2_ERROR(corruption_detected) : res;
+                return (p->pack_size == 0) ? UF2_ERROR(corruption_detected) : res;
             else if (in_cur == 0 && p->dic_pos == dic_pos)
-                return FL2_ERROR(corruption_detected);
+                return UF2_ERROR(corruption_detected);
         }
 
         if (p->unpack_size == 0)
@@ -1165,7 +1165,7 @@ size_t LZMA2_decodeToDic(LZMA2_DCtx *const p, size_t const dic_limit,
     const BYTE *const src, size_t *const src_len, LZMA2_finishMode const finish_mode)
 {
     if (p->state2 == LZMA2_STATE_ERROR)
-        return FL2_ERROR(corruption_detected);
+        return UF2_ERROR(corruption_detected);
     
     size_t const in_size = *src_len;
     size_t in_pos = 0;
@@ -1175,7 +1175,7 @@ size_t LZMA2_decodeToDic(LZMA2_DCtx *const p, size_t const dic_limit,
         size_t len = in_size - in_pos;
         res = LZMA2_decodeChunkToDic(p, dic_limit, src + in_pos, &len, finish_mode);
         in_pos += len;
-        if (FL2_isError(res)) {
+        if (UF2_isError(res)) {
             p->state2 = LZMA2_STATE_ERROR;
             break;
         }
@@ -1192,7 +1192,7 @@ size_t LZMA2_decodeToDic(LZMA2_DCtx *const p, size_t const dic_limit,
     const BYTE *src, size_t *const src_len, LZMA2_finishMode const finish_mode)
 {
     size_t const in_size = *src_len;
-    size_t res = FL2_error_no_error;
+    size_t res = UF2_error_no_error;
     *src_len = 0;
 
     while (p->state2 != LZMA2_STATE_ERROR)
@@ -1289,7 +1289,7 @@ size_t LZMA2_decodeToDic(LZMA2_DCtx *const p, size_t const dic_limit,
             out_cur = p->dic_pos - dic_pos;
             p->unpack_size -= (U32)out_cur;
 
-            if (FL2_isError(res))
+            if (UF2_isError(res))
                 break;
 
             if (res == LZMA_STATUS_NEEDS_MORE_INPUT)
@@ -1314,9 +1314,9 @@ size_t LZMA2_decodeToDic(LZMA2_DCtx *const p, size_t const dic_limit,
     }
 
     p->state2 = LZMA2_STATE_ERROR;
-    if (FL2_isError(res))
+    if (UF2_isError(res))
         return res;
-    return FL2_ERROR(corruption_detected);
+    return UF2_ERROR(corruption_detected);
 }
 #endif
 
@@ -1350,10 +1350,10 @@ size_t LZMA2_decodeToBuf(LZMA2_DCtx *const p, BYTE *dest, size_t *const dest_len
         dest += out_cur;
         out_size -= out_cur;
         *dest_len += out_cur;
-        if (FL2_isError(res) || res == LZMA_STATUS_FINISHED)
+        if (UF2_isError(res) || res == LZMA_STATUS_FINISHED)
             return res;
         if (out_cur == 0 || out_size == 0)
-            return FL2_error_no_error;
+            return UF2_error_no_error;
     }
 }
 

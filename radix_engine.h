@@ -76,7 +76,7 @@ static size_t RMF_handleRepeat2(RMF_builder* const tbl, const BYTE* const data_b
 
 /* Initialization for the reference algortithm */
 #ifdef RMF_REFERENCE
-static void RMF_initReference(FL2_matchTable* const tbl, const void* const data, size_t const end)
+static void RMF_initReference(UF2_matchTable* const tbl, const void* const data, size_t const end)
 {
     const BYTE* const data_block = (const BYTE*)data;
     ptrdiff_t const block_size = end - 1;
@@ -109,7 +109,7 @@ RMF_bitpackInit
 #else
 RMF_structuredInit
 #endif
-(FL2_matchTable* const tbl, const void* const data, size_t const end)
+(UF2_matchTable* const tbl, const void* const data, size_t const end)
 {
     if (end <= 2) {
         for (size_t i = 0; i < end; ++i)
@@ -898,10 +898,10 @@ static void RMF_recurseListsReference(RMF_builder* const tbl,
 #endif /* RMF_REFERENCE */
 
 /* Atomically take a list from the head table */
-static ptrdiff_t RMF_getNextList_mt(FL2_matchTable* const tbl)
+static ptrdiff_t RMF_getNextList_mt(UF2_matchTable* const tbl)
 {
     if (tbl->st_index < tbl->end_index) {
-        long pos = FL2_atomic_increment(tbl->st_index);
+        long pos = UF2_atomic_increment(tbl->st_index);
         if (pos < tbl->end_index)
             return pos;
     }
@@ -909,10 +909,10 @@ static ptrdiff_t RMF_getNextList_mt(FL2_matchTable* const tbl)
 }
 
 /* Non-atomically take a list from the head table */
-static ptrdiff_t RMF_getNextList_st(FL2_matchTable* const tbl)
+static ptrdiff_t RMF_getNextList_st(UF2_matchTable* const tbl)
 {
     if (tbl->st_index < tbl->end_index) {
-        long pos = FL2_nonAtomic_increment(tbl->st_index);
+        long pos = UF2_nonAtomic_increment(tbl->st_index);
         if (pos < tbl->end_index)
             return pos;
     }
@@ -926,10 +926,10 @@ RMF_bitpackBuildTable
 #else
 RMF_structuredBuildTable
 #endif
-(FL2_matchTable* const tbl,
+(UF2_matchTable* const tbl,
     size_t const job,
     unsigned const multi_thread,
-    FL2_dataBlock const block)
+    UF2_dataBlock const block)
 {
     if (block.end == 0)
         return;
@@ -939,7 +939,7 @@ RMF_structuredBuildTable
     size_t bounded_start = max_depth + MAX_READ_BEYOND_DEPTH;
     bounded_start = block.end - MIN(block.end, bounded_start);
     ptrdiff_t next_progress = (job == 0) ? 0 : RADIX16_TABLE_SIZE;
-    ptrdiff_t(*getNextList)(FL2_matchTable* const tbl)
+    ptrdiff_t(*getNextList)(UF2_matchTable* const tbl)
         = multi_thread ? RMF_getNextList_mt : RMF_getNextList_st;
 
     for (;;)
@@ -989,7 +989,7 @@ RMF_bitpackIntegrityCheck
 #else
 RMF_structuredIntegrityCheck
 #endif
-(const FL2_matchTable* const tbl, const BYTE* const data, size_t pos, size_t const end, unsigned max_depth)
+(const UF2_matchTable* const tbl, const BYTE* const data, size_t pos, size_t const end, unsigned max_depth)
 {
     max_depth &= ~1;
     int err = 0;

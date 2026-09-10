@@ -9,15 +9,15 @@
  * You may select, at your option, one of the above-listed licenses.
  */
 
-#ifndef FL2_COMPILER_H
-#define FL2_COMPILER_H
+#ifndef UF2_COMPILER_H
+#define UF2_COMPILER_H
 
 /*-*******************************************************
 *  Compiler specifics
 *********************************************************/
 /* force inlining */
 
-#if !defined(FL2_NO_INLINE)
+#if !defined(UF2_NO_INLINE)
 #if defined (__GNUC__) || defined(__cplusplus) || defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L   /* C99 */
 #  define INLINE_KEYWORD inline
 #else
@@ -138,4 +138,4 @@
 #  pragma warning(disable : 4324)        /* disable: C4324: padded structure */
 #endif
 
-#endif /* FL2_COMPILER_H */
+#endif /* UF2_COMPILER_H */

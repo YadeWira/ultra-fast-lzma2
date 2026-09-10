@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include "../fast-lzma2.h"
+#include "../uf-lzma2.h"
 #include "../fuzzer/datagen.h"
 #include "../mem.h"
 #include "../util.h"
@@ -19,7 +19,7 @@
 static U32 g_nbSeconds = 0;
 static unsigned g_iterations = 2;
 
-static void benchmark(FL2_CCtx* fcs, FL2_DCtx* dctx, char* srcBuffer, size_t srcSize, char* compressedBuffer, size_t maxCompressedSize,
+static void benchmark(UF2_CCtx* fcs, UF2_DCtx* dctx, char* srcBuffer, size_t srcSize, char* compressedBuffer, size_t maxCompressedSize,
     char* resultBuffer)
 {
 
@@ -59,9 +59,9 @@ static void benchmark(FL2_CCtx* fcs, FL2_DCtx* dctx, char* srcBuffer, size_t src
             U64 const clockLoop = g_nbSeconds ? TIMELOOP_MICROSEC : 1;
             U32 nbLoops = 0;
             do {
-                cSize = FL2_compressCCtx(fcs, compressedBuffer, maxCompressedSize, srcBuffer, srcSize, 0);
-                if (FL2_isError(cSize)) {
-                    printf("FL2_compressCCtx() error : %s  \r\n", FL2_getErrorName(cSize));
+                cSize = UF2_compressCCtx(fcs, compressedBuffer, maxCompressedSize, srcBuffer, srcSize, 0);
+                if (UF2_isError(cSize)) {
+                    printf("UF2_compressCCtx() error : %s  \r\n", UF2_getErrorName(cSize));
                     return;
                 }
                 nbLoops++;
@@ -88,12 +88,12 @@ static void benchmark(FL2_CCtx* fcs, FL2_DCtx* dctx, char* srcBuffer, size_t src
             U32 nbLoops = 0;
             UTIL_time_t const clockStart = UTIL_getTime();
             do {
-                size_t const regenSize = FL2_decompressDCtx(dctx,
+                size_t const regenSize = UF2_decompressDCtx(dctx,
                     resultBuffer, srcSize,
                     compressedBuffer, cSize);
-                if (FL2_isError(regenSize)) {
-                    printf("FL2_decompressDCtx() failed on size %u : %s  \r\n",
-                        (unsigned)cSize, FL2_getErrorName(regenSize));
+                if (UF2_isError(regenSize)) {
+                    printf("UF2_decompressDCtx() failed on size %u : %s  \r\n",
+                        (unsigned)cSize, UF2_getErrorName(regenSize));
                     return;
                 }
                 nbLoops++;
@@ -125,11 +125,11 @@ static void benchmark(FL2_CCtx* fcs, FL2_DCtx* dctx, char* srcBuffer, size_t src
     }
 }
 
-static int parse_params(FL2_CCtx* fcs, int argc, char** argv)
+static int parse_params(UF2_CCtx* fcs, int argc, char** argv)
 {
     for (int i = 2; i < argc; ++i) {
         if (argv[i][0] == '-' && argv[i][1] >= '0' && argv[i][1] <= '9')
-            FL2_CCtx_setParameter(fcs, FL2_p_compressionLevel, atoi(argv[i] + 1));
+            UF2_CCtx_setParameter(fcs, UF2_p_compressionLevel, atoi(argv[i] + 1));
     }
     int end_level = 0;
     for (int i = 2; i < argc; ++i) {
@@ -149,54 +149,54 @@ static int parse_params(FL2_CCtx* fcs, int argc, char** argv)
             g_iterations = value;
         }
         else if(strcmp(param, "d") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_dictionaryLog, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_dictionaryLog, value);
         }
         else if (strcmp(param, "o") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_overlapFraction, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_overlapFraction, value);
         }
         else if (strcmp(param, "ds") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_hybridChainLog, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_hybridChainLog, value);
         }
         else if (strcmp(param, "mc") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_hybridCycles, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_hybridCycles, value);
         }
         else if (strcmp(param, "sd") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_searchDepth, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_searchDepth, value);
         }
         else if (strcmp(param, "fb") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_fastLength, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_fastLength, value);
         }
         else if (strcmp(param, "q") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_divideAndConquer, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_divideAndConquer, value);
         }
         else if (strcmp(param, "bm") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_resetInterval, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_resetInterval, value);
         }
         else if (strcmp(param, "b") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_bufferResize, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_bufferResize, value);
         }
         else if (strcmp(param, "a") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_strategy, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_strategy, value);
         }
         else if (strcmp(param, "h") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_doXXHash, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_doXXHash, value);
         }
         else if (strcmp(param, "x") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_highCompression, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_highCompression, value);
         }
         else if (strcmp(param, "e") == 0) {
             end_level = value;
         }
 #ifdef RMF_REFERENCE
         else if (strcmp(param, "r") == 0) {
-            FL2_CCtx_setParameter(fcs, FL2_p_useReferenceMF, value);
+            UF2_CCtx_setParameter(fcs, UF2_p_useReferenceMF, value);
         }
 #endif
     }
     return end_level;
 }
 
-int FL2LIB_CALL main(int argc, char** argv)
+int UF2LIB_CALL main(int argc, char** argv)
 {
     if (argc < 2)
         return 1;
@@ -229,26 +229,26 @@ int FL2LIB_CALL main(int argc, char** argv)
     }
     if (dthreads == ~0U)
         dthreads = threads;
-    FL2_CCtx* fcs = FL2_createCCtxMt(threads);
-    FL2_DCtx* dctx = FL2_createDCtxMt(dthreads);
+    UF2_CCtx* fcs = UF2_createCCtxMt(threads);
+    UF2_DCtx* dctx = UF2_createDCtxMt(dthreads);
     if (fcs == NULL)
         return 1;
     int end_level = parse_params(fcs, argc, argv);
-    int level = (int)FL2_CCtx_getParameter(fcs, FL2_p_compressionLevel);
-    size_t maxCompressedSize = FL2_compressBound(size);
+    int level = (int)UF2_CCtx_getParameter(fcs, UF2_p_compressionLevel);
+    size_t maxCompressedSize = UF2_compressBound(size);
     char* compressedBuffer = malloc(maxCompressedSize);
     char* resultBuffer = malloc(size);
     if (!end_level)
         end_level = level;
-    else if (end_level > FL2_maxCLevel())
-        end_level = FL2_maxCLevel();
+    else if (end_level > UF2_maxCLevel())
+        end_level = UF2_maxCLevel();
     for (; level <= end_level; ++level) {
         benchmark(fcs, dctx, src, size, compressedBuffer, maxCompressedSize, resultBuffer);
-        FL2_CCtx_setParameter(fcs, FL2_p_compressionLevel, level + 1);
+        UF2_CCtx_setParameter(fcs, UF2_p_compressionLevel, level + 1);
         printf("%u\r\n", level);
     }
-    FL2_freeDCtx(dctx);
-    FL2_freeCCtx(fcs);
+    UF2_freeDCtx(dctx);
+    UF2_freeCCtx(fcs);
     free(resultBuffer);
     free(compressedBuffer);
     free(src);

@@ -8,8 +8,8 @@
  *
  */
 
-#ifndef FL2_ATOMIC_H
-#define FL2_ATOMIC_H
+#ifndef UF2_ATOMIC_H
+#define UF2_ATOMIC_H
 
 #if defined (__cplusplus)
 extern "C" {
@@ -17,7 +17,7 @@ extern "C" {
 
 /* atomic add */
 
-#if !defined(FL2_SINGLETHREAD) && defined(_WIN32)
+#if !defined(UF2_SINGLETHREAD) && defined(_WIN32)
 
 #ifdef WINVER
 #undef WINVER
@@ -36,47 +36,47 @@ extern "C" {
 #include <windows.h>
 
 
-typedef LONG volatile FL2_atomic;
+typedef LONG volatile UF2_atomic;
 #define ATOMIC_INITIAL_VALUE -1
-#define FL2_atomic_increment(n) InterlockedIncrement(&n)
-#define FL2_atomic_add(n, a) InterlockedAdd(&n, a)
-#define FL2_nonAtomic_increment(n) (++n)
+#define UF2_atomic_increment(n) InterlockedIncrement(&n)
+#define UF2_atomic_add(n, a) InterlockedAdd(&n, a)
+#define UF2_nonAtomic_increment(n) (++n)
 
-#elif !defined(FL2_SINGLETHREAD) && defined(__GNUC__)
+#elif !defined(UF2_SINGLETHREAD) && defined(__GNUC__)
 
-typedef long FL2_atomic;
+typedef long UF2_atomic;
 #define ATOMIC_INITIAL_VALUE 0
-#define FL2_atomic_increment(n) __sync_fetch_and_add(&n, 1)
-#define FL2_atomic_add(n, a) __sync_fetch_and_add(&n, a)
-#define FL2_nonAtomic_increment(n) (n++)
+#define UF2_atomic_increment(n) __sync_fetch_and_add(&n, 1)
+#define UF2_atomic_add(n, a) __sync_fetch_and_add(&n, a)
+#define UF2_nonAtomic_increment(n) (n++)
 
-#elif !defined(FL2_SINGLETHREAD) && defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L) && !defined(__STDC_NO_ATOMICS__) /* C11 */
+#elif !defined(UF2_SINGLETHREAD) && defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L) && !defined(__STDC_NO_ATOMICS__) /* C11 */
 
 #include <stdatomic.h>
 
-typedef _Atomic long FL2_atomic;
+typedef _Atomic long UF2_atomic;
 #define ATOMIC_INITIAL_VALUE 0
-#define FL2_atomic_increment(n) atomic_fetch_add(&n, 1)
-#define FL2_atomic_add(n, a) atomic_fetch_add(&n, a)
-#define FL2_nonAtomic_increment(n) (n++)
+#define UF2_atomic_increment(n) atomic_fetch_add(&n, 1)
+#define UF2_atomic_add(n, a) atomic_fetch_add(&n, a)
+#define UF2_nonAtomic_increment(n) (n++)
 
 #else  /* No atomics */
 
-#	ifndef FL2_SINGLETHREAD
-#		error  No atomic operations available. Change compiler config or define FL2_SINGLETHREAD for the entire build.
+#	ifndef UF2_SINGLETHREAD
+#		error  No atomic operations available. Change compiler config or define UF2_SINGLETHREAD for the entire build.
 #	endif
 
-typedef long FL2_atomic;
+typedef long UF2_atomic;
 #define ATOMIC_INITIAL_VALUE 0
-#define FL2_atomic_increment(n) (n++)
-#define FL2_atomic_add(n, a) (n += (a))
-#define FL2_nonAtomic_increment(n) (n++)
+#define UF2_atomic_increment(n) (n++)
+#define UF2_atomic_add(n, a) (n += (a))
+#define UF2_nonAtomic_increment(n) (n++)
 
-#endif /* FL2_SINGLETHREAD */
+#endif /* UF2_SINGLETHREAD */
 
 
 #if defined (__cplusplus)
 }
 #endif
 
-#endif /* FL2_ATOMIC_H */
+#endif /* UF2_ATOMIC_H */

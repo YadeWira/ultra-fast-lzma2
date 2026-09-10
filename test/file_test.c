@@ -10,13 +10,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <fast-lzma2.h> /* Assumes that libfast-lzma2 was installed using 'make install' */
+#include <uf-lzma2.h> /* Assumes that libuf-lzma2 was installed using 'make install' */
 
 static FILE *fin;
 static FILE *fout;
 static char out_name[4096];
-static FL2_CStream *fcs;
-static FL2_DStream *fds;
+static UF2_CStream *fcs;
+static UF2_DStream *fds;
 
 static void exit_fail(const char *msg)
 {
@@ -24,12 +24,12 @@ static void exit_fail(const char *msg)
     exit(1);
 }
 
-static int compress_file(FL2_CStream *fcs)
+static int compress_file(UF2_CStream *fcs)
 {
     unsigned char in_buffer[8 * 1024];
     unsigned char out_buffer[4 * 1024];
-    FL2_inBuffer in_buf = { in_buffer, sizeof(in_buffer), sizeof(in_buffer) };
-    FL2_outBuffer out_buf = { out_buffer, sizeof(out_buffer), 0 };
+    UF2_inBuffer in_buf = { in_buffer, sizeof(in_buffer), sizeof(in_buffer) };
+    UF2_outBuffer out_buf = { out_buffer, sizeof(out_buffer), 0 };
     size_t res = 0;
     size_t in_size = 0;
     size_t out_size = 0;
@@ -39,8 +39,8 @@ static int compress_file(FL2_CStream *fcs)
             in_size += in_buf.size;
             in_buf.pos = 0;
         }
-        res = FL2_compressStream(fcs, &out_buf, &in_buf);
-        if (FL2_isError(res))
+        res = UF2_compressStream(fcs, &out_buf, &in_buf);
+        if (UF2_isError(res))
             goto error_out;
 
         fwrite(out_buf.dst, 1, out_buf.pos, fout);
@@ -49,8 +49,8 @@ static int compress_file(FL2_CStream *fcs)
 
     } while (in_buf.size == sizeof(in_buffer));
     do {
-        res = FL2_endStream(fcs, &out_buf);
-        if (FL2_isError(res))
+        res = UF2_endStream(fcs, &out_buf);
+        if (UF2_isError(res))
             goto error_out;
 
         fwrite(out_buf.dst, 1, out_buf.pos, fout);
@@ -62,16 +62,16 @@ static int compress_file(FL2_CStream *fcs)
     return 0;
 
 error_out:
-    fprintf(stderr, "Error: %s\n", FL2_getErrorName(res));
+    fprintf(stderr, "Error: %s\n", UF2_getErrorName(res));
     return 1;
 }
 
-static int decompress_file(FL2_DStream *fds)
+static int decompress_file(UF2_DStream *fds)
 {
     unsigned char in_buffer[4 * 1024];
     unsigned char out_buffer[8 * 1024];
-    FL2_inBuffer in_buf = { in_buffer, sizeof(in_buffer), sizeof(in_buffer) };
-    FL2_outBuffer out_buf = { out_buffer, sizeof(out_buffer), 0 };
+    UF2_inBuffer in_buf = { in_buffer, sizeof(in_buffer), sizeof(in_buffer) };
+    UF2_outBuffer out_buf = { out_buffer, sizeof(out_buffer), 0 };
     size_t res;
     size_t in_size = 0;
     size_t out_size = 0;
@@ -81,8 +81,8 @@ static int decompress_file(FL2_DStream *fds)
             in_size += in_buf.size;
             in_buf.pos = 0;
         }
-        res = FL2_decompressStream(fds, &out_buf, &in_buf);
-        if (FL2_isError(res))
+        res = UF2_decompressStream(fds, &out_buf, &in_buf);
+        if (UF2_isError(res))
             goto error_out;
         /* Discard the output. XXhash will verify the integrity. */
         out_size += out_buf.pos;
@@ -94,7 +94,7 @@ static int decompress_file(FL2_DStream *fds)
     return 0;
 
 error_out:
-    fprintf(stderr, "Error: %s\n", FL2_getErrorName(res));
+    fprintf(stderr, "Error: %s\n", UF2_getErrorName(res));
     return 1;
 }
 
@@ -112,21 +112,21 @@ static void open_files(const char *name)
         exit_fail("Cannot open output file.\n");
 }
 
-static void create_init_fl2_streams(int preset)
+static void create_init_uf2_streams(int preset)
 {
-    fcs = FL2_createCStreamMt(2, 0);
+    fcs = UF2_createCStreamMt(2, 0);
     if (fcs == NULL)
         exit_fail("Cannot allocate compression context.\n");
 
-    fds = FL2_createDStreamMt(2);
+    fds = UF2_createDStreamMt(2);
     if (fds == NULL)
         exit_fail("Cannot allocate decompression context.\n");
 
-    size_t res = FL2_initCStream(fcs, preset);
+    size_t res = UF2_initCStream(fcs, preset);
     if(!res)
-        res = FL2_initDStream(fds);
-    if (FL2_isError(res)) {
-        fprintf(stderr, "Error: %s\n", FL2_getErrorName(res));
+        res = UF2_initDStream(fds);
+    if (UF2_isError(res)) {
+        fprintf(stderr, "Error: %s\n", UF2_getErrorName(res));
         exit(1);
     }
 }
@@ -153,7 +153,7 @@ int main(int argc, char **argv)
     if (name == NULL)
         exit_fail(usage);
 
-    create_init_fl2_streams(preset);
+    create_init_uf2_streams(preset);
     open_files(name);
     fprintf(stdout, "Compress %s to %s:\n", name, out_name);
     
@@ -170,7 +170,7 @@ cleanup:
     fclose(fout);
     fclose(fin);
     remove(out_name);
-    FL2_freeCStream(fcs);
-    FL2_freeDStream(fds);
+    UF2_freeCStream(fcs);
+    UF2_freeDStream(fds);
     return ret;
 }

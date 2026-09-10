@@ -59,17 +59,17 @@ jobs:
           out="dist/${{ matrix.rid }}/runtimes/${{ matrix.rid }}/native"
           mkdir -p "$out"
 
-          cp libfast-lzma2.so.1.0 "$out/libfast-lzma2.so.1.0"
-          ln -sf libfast-lzma2.so.1.0 "$out/libfast-lzma2.so.1"
-          ln -sf libfast-lzma2.so.1.0 "$out/libfast-lzma2.so"
+          cp libuf-lzma2.so.1.0 "$out/libuf-lzma2.so.1.0"
+          ln -sf libuf-lzma2.so.1.0 "$out/libuf-lzma2.so.1"
+          ln -sf libuf-lzma2.so.1.0 "$out/libuf-lzma2.so"
 
           mkdir -p "dist/${{ matrix.rid }}/include"
-          cp fast-lzma2.h fl2_errors.h "dist/${{ matrix.rid }}/include/"
+          cp uf-lzma2.h uf2_errors.h "dist/${{ matrix.rid }}/include/"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: fast-lzma2-${{ matrix.rid }}
+          name: uf-lzma2-${{ matrix.rid }}
           path: dist/${{ matrix.rid }}
           if-no-files-found: error
 
@@ -97,9 +97,9 @@ jobs:
       - name: Build shared library (musl)
         run: |
           rm -rf dist
-          rm -f *.o *.d libfast-lzma2.so.1.0 libfast-lzma2.a
+          rm -f *.o *.d libuf-lzma2.so.1.0 libuf-lzma2.a
 
-          SOURCES="dict_buffer.c fl2_common.c fl2_compress.c fl2_decompress.c fl2_pool.c fl2_threading.c lzma2_dec.c lzma2_enc.c radix_bitpack.c radix_mf.c radix_struct.c range_enc.c util.c xxhash.c"
+          SOURCES="dict_buffer.c uf2_common.c uf2_compress.c uf2_decompress.c uf2_pool.c uf2_threading.c lzma2_dec.c lzma2_enc.c radix_bitpack.c radix_mf.c radix_struct.c range_enc.c util.c xxhash.c"
 
           zig cc \
             -target ${{ matrix.target }} \
@@ -107,7 +107,7 @@ jobs:
             -O2 \
             -fPIC \
             -D_GNU_SOURCE \
-            -o libfast-lzma2.so.1.0 \
+            -o libuf-lzma2.so.1.0 \
             $SOURCES
 
       - name: Prepare RID layout
@@ -116,17 +116,17 @@ jobs:
           out="dist/${{ matrix.rid }}/runtimes/${{ matrix.rid }}/native"
           mkdir -p "$out"
 
-          cp libfast-lzma2.so.1.0 "$out/libfast-lzma2.so.1.0"
-          ln -sf libfast-lzma2.so.1.0 "$out/libfast-lzma2.so.1"
-          ln -sf libfast-lzma2.so.1.0 "$out/libfast-lzma2.so"
+          cp libuf-lzma2.so.1.0 "$out/libuf-lzma2.so.1.0"
+          ln -sf libuf-lzma2.so.1.0 "$out/libuf-lzma2.so.1"
+          ln -sf libuf-lzma2.so.1.0 "$out/libuf-lzma2.so"
 
           mkdir -p "dist/${{ matrix.rid }}/include"
-          cp fast-lzma2.h fl2_errors.h "dist/${{ matrix.rid }}/include/"
+          cp uf-lzma2.h uf2_errors.h "dist/${{ matrix.rid }}/include/"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: fast-lzma2-${{ matrix.rid }}
+          name: uf-lzma2-${{ matrix.rid }}
           path: dist/${{ matrix.rid }}
           if-no-files-found: error
 
@@ -153,24 +153,24 @@ jobs:
 
       - name: Build DLL (MSVC)
         run: |
-          msbuild dll/fast-lzma2.vcxproj /m /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:OutDir="${{ github.workspace }}\out\${{ matrix.rid }}\" /p:IntDir="${{ github.workspace }}\obj\${{ matrix.rid }}\"
+          msbuild dll/uf-lzma2.vcxproj /m /p:Configuration=Release /p:Platform=${{ matrix.platform }} /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:OutDir="${{ github.workspace }}\out\${{ matrix.rid }}\" /p:IntDir="${{ github.workspace }}\obj\${{ matrix.rid }}\"
         shell: pwsh
 
       - name: Prepare RID layout
         run: |
           $out = "dist/${{ matrix.rid }}/runtimes/${{ matrix.rid }}/native"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          Copy-Item "out/${{ matrix.rid }}/fast-lzma2.dll" "$out/fast-lzma2.dll" -Force
+          Copy-Item "out/${{ matrix.rid }}/uf-lzma2.dll" "$out/uf-lzma2.dll" -Force
 
           New-Item -ItemType Directory -Force -Path "dist/${{ matrix.rid }}/include" | Out-Null
-          Copy-Item "fast-lzma2.h" "dist/${{ matrix.rid }}/include/fast-lzma2.h" -Force
-          Copy-Item "fl2_errors.h" "dist/${{ matrix.rid }}/include/fl2_errors.h" -Force
+          Copy-Item "uf-lzma2.h" "dist/${{ matrix.rid }}/include/uf-lzma2.h" -Force
+          Copy-Item "uf2_errors.h" "dist/${{ matrix.rid }}/include/uf2_errors.h" -Force
         shell: pwsh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: fast-lzma2-${{ matrix.rid }}
+          name: uf-lzma2-${{ matrix.rid }}
           path: dist/${{ matrix.rid }}
           if-no-files-found: error
 
@@ -186,18 +186,18 @@ jobs:
       - name: Download all per-RID artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: fast-lzma2-*
+          pattern: uf-lzma2-*
           path: merged
           merge-multiple: true
 
       - name: Create single zip bundle
         run: |
           cd merged
-          zip -r ../fast-lzma2-all-rids.zip .
+          zip -r ../uf-lzma2-all-rids.zip .
 
       - name: Upload single bundle
         uses: actions/upload-artifact@v7
         with:
-          name: fast-lzma2-all-rids
-          path: fast-lzma2-all-rids.zip
+          name: uf-lzma2-all-rids
+          path: uf-lzma2-all-rids.zip
           if-no-files-found: error

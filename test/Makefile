@@ -1,5 +1,5 @@
 OBJ=file_test.o
-LIB:=-static -L../ -lfast-lzma2	
+LIB:=-static -L../ -luf-lzma2	
 
 CFLAGS:=-Wall -O1 -pthread
 CC:=gcc
@@ -7,7 +7,7 @@ CC:=gcc
 EXT:=
 ifeq ($(OS),Windows_NT)
 	EXT:=.exe
-	LIB:=../libfast-lzma2.dll
+	LIB:=../libuf-lzma2.dll
 endif
 CFLAGS+=-I../
 

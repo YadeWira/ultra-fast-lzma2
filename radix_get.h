@@ -8,8 +8,8 @@
 * You may select, at your option, one of the above-listed licenses.
 */
 
-#ifndef FL2_RADIX_GET_H_
-#define FL2_RADIX_GET_H_
+#ifndef UF2_RADIX_GET_H_
+#define UF2_RADIX_GET_H_
 
 #if defined (__cplusplus)
 extern "C" {
@@ -82,8 +82,8 @@ static size_t RMF_structuredExtendMatch(const BYTE* const data,
 }
 
 FORCE_INLINE_TEMPLATE
-RMF_match RMF_getMatch(FL2_dataBlock block,
-    FL2_matchTable* tbl,
+RMF_match RMF_getMatch(UF2_dataBlock block,
+    UF2_matchTable* tbl,
     unsigned max_depth,
     int structTbl,
     size_t pos)
@@ -135,8 +135,8 @@ RMF_match RMF_getMatch(FL2_dataBlock block,
 }
 
 FORCE_INLINE_TEMPLATE
-RMF_match RMF_getNextMatch(FL2_dataBlock block,
-    FL2_matchTable* tbl,
+RMF_match RMF_getNextMatch(UF2_dataBlock block,
+    UF2_matchTable* tbl,
     unsigned max_depth,
     int structTbl,
     size_t pos)
@@ -199,4 +199,4 @@ RMF_match RMF_getNextMatch(FL2_dataBlock block,
 }
 #endif
 
-#endif /* FL2_RADIX_GET_H_ */
+#endif /* UF2_RADIX_GET_H_ */

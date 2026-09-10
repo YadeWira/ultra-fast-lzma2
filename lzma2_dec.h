@@ -209,7 +209,7 @@ typedef struct
     size_t unpack_size;
 } LZMA2_chunk;
 
-#if defined(FL2_DEBUG) && (FL2_DEBUG>=1)
+#if defined(UF2_DEBUG) && (UF2_DEBUG>=1)
 #  define LZMA2_MT_INPUT_SIZE 0x400
 #else
 #  define LZMA2_MT_INPUT_SIZE 0x40000

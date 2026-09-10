@@ -5,7 +5,7 @@
 * Public domain
 */
 
-#include "fl2_internal.h"
+#include "uf2_internal.h"
 #include "mem.h"
 #include "platform.h"
 #include "range_enc.h"

@@ -7,16 +7,16 @@ Public domain
 #include <stdlib.h>
 #include <math.h>
 
-#include "fl2_errors.h"
-#include "fl2_internal.h"
+#include "uf2_errors.h"
+#include "uf2_internal.h"
 #include "lzma2_enc.h"
-#include "fl2_compress_internal.h"
+#include "uf2_compress_internal.h"
 #include "mem.h"
 #include "count.h"
 #include "radix_mf.h"
 #include "range_enc.h"
 
-#ifdef FL2_XZ_BUILD
+#ifdef UF2_XZ_BUILD
 #  include "tuklib_integer.h"
 #  define MEM_readLE32(a) unaligned_read32le(a)
 
@@ -68,7 +68,7 @@ Public domain
 #define kMatchLenMin 2U
 #define kMatchLenMax (kMatchLenMin + kLenNumSymbolsTotal - 1U)
 
-#define kMatchesMax 65U /* Doesn't need to be larger than FL2_HYBRIDCYCLES_MAX + 1 */
+#define kMatchesMax 65U /* Doesn't need to be larger than UF2_HYBRIDCYCLES_MAX + 1 */
 
 #define kOptimizerEndSize 32U
 #define kOptimizerBufferSize (kMatchLenMax * 2U + kOptimizerEndSize)
@@ -204,7 +204,7 @@ struct LZMA2_ECtx_s
     size_t lit_pos_mask;
     size_t pos_mask;
     unsigned match_cycles;
-    FL2_strategy strategy;
+    UF2_strategy strategy;
 
     RC_encoder rc;
     /* Finish writing the chunk at this size */
@@ -253,7 +253,7 @@ LZMA2_ECtx* LZMA2_createECtx(void)
     enc->lit_pos_mask = (1 << enc->lp) - 1;
     enc->pos_mask = (1 << enc->pb) - 1;
     enc->match_cycles = 1;
-    enc->strategy = FL2_ultra;
+    enc->strategy = UF2_ultra;
     enc->match_price_count = 0;
     enc->rep_len_price_count = 0;
     enc->dist_price_table_size = kDistTableSizeMax;
@@ -579,8 +579,8 @@ void LZMA_encodeNormalMatch(LZMA2_ECtx *const enc, unsigned const len, U32 const
 
 FORCE_INLINE_TEMPLATE
 size_t LZMA_encodeChunkFast(LZMA2_ECtx *const enc,
-    FL2_dataBlock const block,
-    FL2_matchTable* const tbl,
+    UF2_dataBlock const block,
+    UF2_matchTable* const tbl,
     int const struct_tbl,
     size_t pos,
     size_t const uncompressed_end)
@@ -866,9 +866,9 @@ static int LZMA_hashCreate(LZMA2_ECtx *const enc, unsigned const dictionary_bits
  * Used for allocating before compression begins. Any existing table will be reused if
  * it is at least as large as required.
  */
-int LZMA2_hashAlloc(LZMA2_ECtx *const enc, const FL2_lzma2Parameters* const options)
+int LZMA2_hashAlloc(LZMA2_ECtx *const enc, const UF2_lzma2Parameters* const options)
 {
-    if (enc->strategy == FL2_ultra && enc->hash_alloc_3 < ((ptrdiff_t)1 << options->second_dict_bits))
+    if (enc->strategy == UF2_ultra && enc->hash_alloc_3 < ((ptrdiff_t)1 << options->second_dict_bits))
         return LZMA_hashCreate(enc, options->second_dict_bits);
 
     return 0;
@@ -880,7 +880,7 @@ int LZMA2_hashAlloc(LZMA2_ECtx *const enc, const FL2_lzma2Parameters* const opti
  * the RMF match (most likely), insert that match at the end of the list.
  */
 HINT_INLINE
-size_t LZMA_hashGetMatches(LZMA2_ECtx *const enc, FL2_dataBlock const block,
+size_t LZMA_hashGetMatches(LZMA2_ECtx *const enc, UF2_dataBlock const block,
     ptrdiff_t const pos,
     size_t const length_limit,
     RMF_match const match)
@@ -948,7 +948,7 @@ size_t LZMA_hashGetMatches(LZMA2_ECtx *const enc, FL2_dataBlock const block,
 * If is_hybrid != 0, this method works in hybrid mode, using the
 * hash chain to find shorter matches at near distances. */
 FORCE_INLINE_TEMPLATE
-size_t LZMA_optimalParse(LZMA2_ECtx* const enc, FL2_dataBlock const block,
+size_t LZMA_optimalParse(LZMA2_ECtx* const enc, UF2_dataBlock const block,
     RMF_match match,
     size_t const pos,
     size_t const cur,
@@ -1287,7 +1287,7 @@ static void LZMA_initMatchesPos0(LZMA2_ECtx *const enc,
 }
 
 FORCE_NOINLINE
-static size_t LZMA_initMatchesPos0Best(LZMA2_ECtx *const enc, FL2_dataBlock const block,
+static size_t LZMA_initMatchesPos0Best(LZMA2_ECtx *const enc, UF2_dataBlock const block,
     RMF_match const match,
     size_t const pos,
     size_t start_len,
@@ -1348,7 +1348,7 @@ static size_t LZMA_initMatchesPos0Best(LZMA2_ECtx *const enc, FL2_dataBlock cons
 * This function must not be called at a position where no match is
 * available. */
 FORCE_INLINE_TEMPLATE
-size_t LZMA_initOptimizerPos0(LZMA2_ECtx *const enc, FL2_dataBlock const block,
+size_t LZMA_initOptimizerPos0(LZMA2_ECtx *const enc, UF2_dataBlock const block,
     RMF_match const match,
     size_t const pos,
     int const is_hybrid,
@@ -1442,8 +1442,8 @@ size_t LZMA_initOptimizerPos0(LZMA2_ECtx *const enc, FL2_dataBlock const block,
 }
 
 FORCE_INLINE_TEMPLATE
-size_t LZMA_encodeOptimumSequence(LZMA2_ECtx *const enc, FL2_dataBlock const block,
-    FL2_matchTable* const tbl,
+size_t LZMA_encodeOptimumSequence(LZMA2_ECtx *const enc, UF2_dataBlock const block,
+    UF2_matchTable* const tbl,
     int const struct_tbl,
     int const is_hybrid,
     size_t start_index,
@@ -1651,8 +1651,8 @@ static void FORCE_NOINLINE LZMA_fillDistancesPrices(LZMA2_ECtx *const enc)
 
 FORCE_INLINE_TEMPLATE
 size_t LZMA_encodeChunkBest(LZMA2_ECtx *const enc,
-    FL2_dataBlock const block,
-    FL2_matchTable* const tbl,
+    UF2_dataBlock const block,
+    UF2_matchTable* const tbl,
     int const struct_tbl,
     size_t pos,
     size_t const uncompressed_end)
@@ -1668,7 +1668,7 @@ size_t LZMA_encodeChunkBest(LZMA2_ECtx *const enc,
         RMF_match const match = RMF_getMatch(block, tbl, search_depth, struct_tbl, pos);
         if (match.length > 1) {
             /* Template-like inline function */
-            if (enc->strategy == FL2_ultra) {
+            if (enc->strategy == UF2_ultra) {
                 pos = LZMA_encodeOptimumSequence(enc, block, tbl, struct_tbl, 1, pos, uncompressed_end, match);
             }
             else {
@@ -1773,10 +1773,10 @@ size_t LZMA2_compressBound(size_t src_size)
 	return src_size + ((src_size + chunk_min_avg - 1) / chunk_min_avg) * 3 + 6;
 }
 
-size_t LZMA2_encMemoryUsage(unsigned const chain_log, FL2_strategy const strategy, unsigned const thread_count)
+size_t LZMA2_encMemoryUsage(unsigned const chain_log, UF2_strategy const strategy, unsigned const thread_count)
 {
     size_t size = sizeof(LZMA2_ECtx);
-    if(strategy == FL2_ultra)
+    if(strategy == UF2_ultra)
         size += sizeof(LZMA2_hc3) + (sizeof(U32) << chain_log) - sizeof(U32);
     return size * thread_count;
 }
@@ -1819,8 +1819,8 @@ static U32 LZMA2_isqrt(U32 op)
     return res;
 }
 
-static BYTE LZMA2_isChunkIncompressible(const FL2_matchTable* const tbl,
-    FL2_dataBlock const block, size_t const start,
+static BYTE LZMA2_isChunkIncompressible(const UF2_matchTable* const tbl,
+    UF2_dataBlock const block, size_t const start,
 	unsigned const strategy)
 {
 	if (block.end - start >= kMinTestChunkSize) {
@@ -1909,12 +1909,12 @@ static BYTE LZMA2_isChunkIncompressible(const FL2_matchTable* const tbl,
 }
 
 static size_t LZMA2_encodeChunk(LZMA2_ECtx *const enc,
-    FL2_matchTable* const tbl,
-    FL2_dataBlock const block,
+    UF2_matchTable* const tbl,
+    UF2_dataBlock const block,
     size_t const pos, size_t const uncompressed_end)
 {
     /* Template-like inline functions */
-    if (enc->strategy == FL2_fast) {
+    if (enc->strategy == UF2_fast) {
         if (tbl->is_struct) {
             return LZMA_encodeChunkFast(enc, block, tbl, 1,
                 pos, uncompressed_end);
@@ -1937,12 +1937,12 @@ static size_t LZMA2_encodeChunk(LZMA2_ECtx *const enc,
 }
 
 size_t LZMA2_encode(LZMA2_ECtx *const enc,
-    FL2_matchTable* const tbl,
-    FL2_dataBlock const block,
-    const FL2_lzma2Parameters* const options,
+    UF2_matchTable* const tbl,
+    UF2_dataBlock const block,
+    const UF2_lzma2Parameters* const options,
     int stream_prop,
-    FL2_atomic *const progress_in,
-    FL2_atomic *const progress_out,
+    UF2_atomic *const progress_in,
+    UF2_atomic *const progress_out,
     int *const canceled)
 {
     size_t const start = block.start;
@@ -1973,11 +1973,11 @@ size_t LZMA2_encode(LZMA2_ECtx *const enc,
 
     LZMA2_reset(enc, block.end);
 
-    if (enc->strategy == FL2_ultra) {
+    if (enc->strategy == UF2_ultra) {
         /* Create a hash chain to put the encoder into hybrid mode */
         if (enc->hash_alloc_3 < ((ptrdiff_t)1 << options->second_dict_bits)) {
             if(LZMA_hashCreate(enc, options->second_dict_bits) != 0)
-                return FL2_ERROR(memory_allocation);
+                return UF2_ERROR(memory_allocation);
         }
         else {
             LZMA_hashReset(enc, options->second_dict_bits);
@@ -1999,7 +1999,7 @@ size_t LZMA2_encode(LZMA2_ECtx *const enc,
 
         if (!incompressible) {
             size_t cur = pos;
-            size_t const end = (enc->strategy == FL2_fast) ? MIN(block.end, pos + kMaxChunkUncompressedSize - kMatchLenMax + 1)
+            size_t const end = (enc->strategy == UF2_fast) ? MIN(block.end, pos + kMaxChunkUncompressedSize - kMatchLenMax + 1)
                 : MIN(block.end, pos + kMaxChunkUncompressedSize - kOptimizerBufferSize + 2); /* last byte of opt_buf unused */
 
             /* Copy states in case chunk is incompressible */
@@ -2016,7 +2016,7 @@ size_t LZMA2_encode(LZMA2_ECtx *const enc,
                 cur = LZMA2_encodeChunk(enc, tbl, block, cur, end);
 
 				if (header_size + enc->rc.out_index > kTempBufferSize)
-					return FL2_ERROR(internal);
+					return UF2_ERROR(internal);
 
                 /* Switch to the match table as output buffer */
                 out_dest = RMF_getTableAsOutputBuffer(tbl, start);
@@ -2037,7 +2037,7 @@ size_t LZMA2_encode(LZMA2_ECtx *const enc,
         size_t uncompressed_size = next_index - pos;
 
         if (compressed_size > kMaxChunkCompressedSize || uncompressed_size > kMaxChunkUncompressedSize)
-            return FL2_ERROR(internal);
+            return UF2_ERROR(internal);
 
         BYTE* header = out_dest;
 
@@ -2089,13 +2089,13 @@ size_t LZMA2_encode(LZMA2_ECtx *const enc,
         out_dest += compressed_size + header_size;
 
         /* Update progress concurrently with other encoder threads */
-        FL2_atomic_add(*progress_in, (long)(next_index - pos));
-        FL2_atomic_add(*progress_out, (long)(compressed_size + header_size));
+        UF2_atomic_add(*progress_in, (long)(next_index - pos));
+        UF2_atomic_add(*progress_out, (long)(compressed_size + header_size));
 
         pos = next_index;
 
         if (*canceled)
-            return FL2_ERROR(canceled);
+            return UF2_ERROR(canceled);
     }
     return out_dest - RMF_getTableAsOutputBuffer(tbl, start);
 }

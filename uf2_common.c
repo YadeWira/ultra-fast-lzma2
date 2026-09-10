@@ -14,71 +14,71 @@
 /*-*************************************
 *  Dependencies
 ***************************************/
-#include "fast-lzma2.h"
-#include "fl2_errors.h"
-#include "fl2_internal.h"
+#include "uf-lzma2.h"
+#include "uf2_errors.h"
+#include "uf2_internal.h"
 #include "lzma2_enc.h"
 
 
 /*-****************************************
 *  Version
 ******************************************/
-FL2LIB_API unsigned FL2LIB_CALL FL2_versionNumber(void) { return FL2_VERSION_NUMBER; }
+UF2LIB_API unsigned UF2LIB_CALL UF2_versionNumber(void) { return UF2_VERSION_NUMBER; }
 
-FL2LIB_API const char* FL2LIB_CALL FL2_versionString(void) { return FL2_VERSION_STRING; }
+UF2LIB_API const char* UF2LIB_CALL UF2_versionString(void) { return UF2_VERSION_STRING; }
 
 
 /*-****************************************
 *  Compression helpers
 ******************************************/
-FL2LIB_API size_t FL2LIB_CALL FL2_compressBound(size_t srcSize)
+UF2LIB_API size_t UF2LIB_CALL UF2_compressBound(size_t srcSize)
 {
 	return LZMA2_compressBound(srcSize);
 }
 
 /*-****************************************
-*  FL2 Error Management
+*  UF2 Error Management
 ******************************************/
 HINT_INLINE
 unsigned IsError(size_t code)
 {
-    return (code > FL2_ERROR(maxCode));
+    return (code > UF2_ERROR(maxCode));
 }
 
-/*! FL2_isError() :
+/*! UF2_isError() :
  *  tells if a return value is an error code */
-FL2LIB_API unsigned FL2LIB_CALL FL2_isError(size_t code)
+UF2LIB_API unsigned UF2LIB_CALL UF2_isError(size_t code)
 {
     return IsError(code);
 }
 
-/*! FL2_isTimedOut() :
+/*! UF2_isTimedOut() :
  *  tells if a return value is the timeout code */
-FL2LIB_API unsigned FL2LIB_CALL FL2_isTimedOut(size_t code)
+UF2LIB_API unsigned UF2LIB_CALL UF2_isTimedOut(size_t code)
 {
-    return (code == FL2_ERROR(timedOut));
+    return (code == UF2_ERROR(timedOut));
 }
 
-/*! FL2_getErrorName() :
+/*! UF2_getErrorName() :
  *  provides error code string from function result (useful for debugging) */
-FL2LIB_API const char* FL2LIB_CALL FL2_getErrorName(size_t code)
+UF2LIB_API const char* UF2LIB_CALL UF2_getErrorName(size_t code)
 {
-    return FL2_getErrorString(FL2_getErrorCode(code));
+    return UF2_getErrorString(UF2_getErrorCode(code));
 }
 
-/*! FL2_getError() :
- *  convert a `size_t` function result into a proper FL2_errorCode enum */
-FL2LIB_API FL2_ErrorCode FL2LIB_CALL FL2_getErrorCode(size_t code)
+/*! UF2_getError() :
+ *  convert a `size_t` function result into a proper UF2_errorCode enum */
+UF2LIB_API UF2_ErrorCode UF2LIB_CALL UF2_getErrorCode(size_t code)
 {
     if (!IsError(code)) 
-        return (FL2_ErrorCode)0;
+        return (UF2_ErrorCode)0;
 
-    return (FL2_ErrorCode)(0 - code);
+    return (UF2_ErrorCode)(0 - code);
 }
 
-/*! FL2_getErrorString() :
+/*! UF2_getErrorString() :
  *  provides error code string from enum */
-FL2LIB_API const char* FL2LIB_CALL FL2_getErrorString(FL2_ErrorCode code)
+UF2LIB_API const char* UF2LIB_CALL UF2_getErrorString(UF2_ErrorCode code)
 {
     static const char* const notErrorCode = "Unspecified error code";
     switch (code)
@@ -96,9 +96,9 @@ FL2LIB_API const char* FL2LIB_CALL FL2_getErrorString(FL2_ErrorCode code)
     case PREFIX(memory_allocation): return "Allocation error : not enough memory";
     case PREFIX(dstSize_tooSmall): return "Destination buffer is too small";
     case PREFIX(srcSize_wrong): return "Src size is incorrect";
-    case PREFIX(canceled): return "Processing was canceled by a call to FL2_cancelCStream() or FL2_cancelDStream()";
+    case PREFIX(canceled): return "Processing was canceled by a call to UF2_cancelCStream() or UF2_cancelDStream()";
     case PREFIX(buffer): return "Streaming progress halted due to buffer(s) full/empty";
-    case PREFIX(timedOut): return "Wait timed out. Timeouts should be handled before errors using FL2_isTimedOut()";
+    case PREFIX(timedOut): return "Wait timed out. Timeouts should be handled before errors using UF2_isTimedOut()";
         /* following error codes are not stable and may be removed or changed in a future version */
     case PREFIX(maxCode):
     default: return notErrorCode;
@@ -107,7 +107,7 @@ FL2LIB_API const char* FL2LIB_CALL FL2_getErrorString(FL2_ErrorCode code)
 
 /*! g_debuglog_enable :
  *  turn on/off debug traces (global switch) */
-#if defined(FL2_DEBUG) && (FL2_DEBUG >= 2)
+#if defined(UF2_DEBUG) && (UF2_DEBUG >= 2)
 int g_debuglog_enable = 1;
 #endif
 

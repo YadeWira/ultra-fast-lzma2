@@ -8,15 +8,15 @@
 * You may select, at your option, one of the above-listed licenses.
 */
 
-#include "fast-lzma2.h"
+#include "uf-lzma2.h"
 #include "mem.h"
 #include "data_block.h"
 #ifndef NO_XXHASH
 #  include "xxhash.h"
 #endif
 
-#ifndef FL2_DICT_BUFFER_H_
-#define FL2_DICT_BUFFER_H_
+#ifndef UF2_DICT_BUFFER_H_
+#define UF2_DICT_BUFFER_H_
 
 #if defined (__cplusplus)
 extern "C" {
@@ -54,13 +54,13 @@ size_t DICT_get(DICT_buffer *const buf, void **const dict);
 
 int DICT_update(DICT_buffer *const buf, size_t const added_size);
 
-void DICT_put(DICT_buffer *const buf, FL2_inBuffer* const input);
+void DICT_put(DICT_buffer *const buf, UF2_inBuffer* const input);
 
 size_t DICT_availSpace(const DICT_buffer *const buf);
 
 int DICT_hasUnprocessed(const DICT_buffer *const buf);
 
-void DICT_getBlock(DICT_buffer *const buf, FL2_dataBlock *const block);
+void DICT_getBlock(DICT_buffer *const buf, UF2_dataBlock *const block);
 
 int DICT_needShift(DICT_buffer *const buf);
 
@@ -78,4 +78,4 @@ size_t DICT_memUsage(const DICT_buffer *const buf);
 }
 #endif
 
-#endif /* FL2_DICT_BUFFER_H_ */
+#endif /* UF2_DICT_BUFFER_H_ */

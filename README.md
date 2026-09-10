@@ -18,7 +18,7 @@ Changes in this fork:
 
 ---
 
-The __Fast LZMA2 Library__ is a lossless high-ratio data compression library based on Igor Pavlov's LZMA2 codec from 7-zip.
+__Ultra Fast LZMA2__ is a lossless high-ratio data compression library based on Igor Pavlov's LZMA2 codec from 7-zip.
 
 Binaries of 7-Zip forks which use the algorithm are available in the [7-Zip-FL2 project], the [7-Zip-zstd project], and the active fork of [p7zip]. The library
 is also embedded in a fork of XZ Utils, named [FXZ Utils].
@@ -62,7 +62,7 @@ tester, and DLL.
 ### POSIX
 
 Run `make` in the root directory to build the shared library, then `make install` to allow other programs to use the headers and
-libfast-lzma2. Use `make test` to build the file compression tester and run it on a test file.
+libuf-lzma2. Use `make test` to build the file compression tester and run it on a test file.
 
 On x86_64 and ARM64 (aarch64) the build automatically substitutes an assembler implementation of the LZMA decoder for the C one.
 The ARM64 version is ported from Igor Pavlov's `Asm/arm64/LzmaDecOpt.S` and uses GNU assembler syntax, so it is built on Linux and

@@ -9,8 +9,8 @@
 */
 
 #include "mem.h"          /* U32, U64 */
-#include "fl2_threading.h"
-#include "fl2_internal.h"
+#include "uf2_threading.h"
+#include "uf2_internal.h"
 #include "radix_internal.h"
 
 #undef MIN
@@ -38,13 +38,13 @@
 
 #define IsNull(pos) (((RMF_unit*)tbl->table)[(pos) >> UNIT_BITS].links[(pos) & UNIT_MASK] == RADIX_NULL_LINK)
 
-BYTE* RMF_structuredAsOutputBuffer(FL2_matchTable* const tbl, size_t const pos)
+BYTE* RMF_structuredAsOutputBuffer(UF2_matchTable* const tbl, size_t const pos)
 {
     return (BYTE*)((RMF_unit*)tbl->table + (pos >> UNIT_BITS) + ((pos & UNIT_MASK) != 0));
 }
 
 /* Restrict the match lengths so that they don't reach beyond pos */
-void RMF_structuredLimitLengths(FL2_matchTable* const tbl, size_t const pos)
+void RMF_structuredLimitLengths(UF2_matchTable* const tbl, size_t const pos)
 {
     DEBUGLOG(5, "RMF_limitLengths : end %u, max length %u", (U32)pos, RADIX_MAX_LENGTH);
     SetNull(pos - 1);

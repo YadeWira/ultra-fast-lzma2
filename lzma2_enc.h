@@ -31,32 +31,32 @@ typedef struct
     unsigned pb;
     unsigned fast_length;
     unsigned match_cycles;
-    FL2_strategy strategy;
+    UF2_strategy strategy;
     unsigned second_dict_bits;
     unsigned reset_interval;
-} FL2_lzma2Parameters;
+} UF2_lzma2Parameters;
 
 
 LZMA2_ECtx* LZMA2_createECtx(void);
 
 void LZMA2_freeECtx(LZMA2_ECtx *const enc);
 
-int LZMA2_hashAlloc(LZMA2_ECtx *const enc, const FL2_lzma2Parameters* const options);
+int LZMA2_hashAlloc(LZMA2_ECtx *const enc, const UF2_lzma2Parameters* const options);
 
 size_t LZMA2_encode(LZMA2_ECtx *const enc,
-    FL2_matchTable* const tbl,
-    FL2_dataBlock const block,
-    const FL2_lzma2Parameters* const options,
+    UF2_matchTable* const tbl,
+    UF2_dataBlock const block,
+    const UF2_lzma2Parameters* const options,
     int stream_prop,
-    FL2_atomic *const progress_in,
-    FL2_atomic *const progress_out,
+    UF2_atomic *const progress_in,
+    UF2_atomic *const progress_out,
     int *const canceled);
 
 BYTE LZMA2_getDictSizeProp(size_t const dictionary_size);
 
 size_t LZMA2_compressBound(size_t src_size);
 
-size_t LZMA2_encMemoryUsage(unsigned const chain_log, FL2_strategy const strategy, unsigned const thread_count);
+size_t LZMA2_encMemoryUsage(unsigned const chain_log, UF2_strategy const strategy, unsigned const thread_count);
 
 #if defined (__cplusplus)
 }

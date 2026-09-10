@@ -9,8 +9,8 @@
  * You may select, at your option, one of the above-listed licenses.
  */
 
-#ifndef FL2_COMPRESS_H
-#define FL2_COMPRESS_H
+#ifndef UF2_COMPRESS_H
+#define UF2_COMPRESS_H
 
 /*-*************************************
 *  Dependencies
@@ -19,9 +19,9 @@
 #include "data_block.h"
 #include "radix_internal.h"
 #include "lzma2_enc.h"
-#include "fast-lzma2.h"
-#include "fl2_threading.h"
-#include "fl2_pool.h"
+#include "uf-lzma2.h"
+#include "uf2_threading.h"
+#include "uf2_pool.h"
 #include "dict_buffer.h"
 #ifndef NO_XXHASH
 #  include "xxhash.h"
@@ -36,7 +36,7 @@ extern "C" {
 ***************************************/
 
 typedef struct {
-    FL2_lzma2Parameters cParams;
+    UF2_lzma2Parameters cParams;
     RMF_parameters rParams;
     unsigned compressionLevel;
     BYTE highCompression;
@@ -44,23 +44,23 @@ typedef struct {
     BYTE doXXH;
 #endif
     BYTE omitProp;
-} FL2_CCtx_params;
+} UF2_CCtx_params;
 
 typedef struct {
-    FL2_CCtx* cctx;
+    UF2_CCtx* cctx;
     LZMA2_ECtx* enc;
-    FL2_dataBlock block;
+    UF2_dataBlock block;
     size_t cSize;
-} FL2_job;
+} UF2_job;
 
-struct FL2_CCtx_s {
+struct UF2_CCtx_s {
     DICT_buffer buf;
-    FL2_CCtx_params params;
-#ifndef FL2_SINGLETHREAD
-    FL2POOL_ctx* factory;
-    FL2POOL_ctx* compressThread;
+    UF2_CCtx_params params;
+#ifndef UF2_SINGLETHREAD
+    UF2POOL_ctx* factory;
+    UF2POOL_ctx* compressThread;
 #endif
-    FL2_dataBlock curBlock;
+    UF2_dataBlock curBlock;
     size_t asyncRes;
     size_t threadCount;
     size_t outThread;
@@ -68,21 +68,21 @@ struct FL2_CCtx_s {
     size_t dictMax;
     U64 streamTotal;
     U64 streamCsize;
-    FL2_matchTable* matchTable;
-#ifndef FL2_SINGLETHREAD
+    UF2_matchTable* matchTable;
+#ifndef UF2_SINGLETHREAD
     U32 timeout;
 #endif
     U32 rmfWeight;
     U32 encWeight;
-    FL2_atomic progressIn;
-    FL2_atomic progressOut;
+    UF2_atomic progressIn;
+    UF2_atomic progressOut;
     int canceled;
     BYTE wroteProp;
     BYTE endMarked;
     BYTE loopCount;
     BYTE lockParams;
     unsigned jobCount;
-    FL2_job jobs[1];
+    UF2_job jobs[1];
 };
 
 #if defined (__cplusplus)
@@ -90,4 +90,4 @@ struct FL2_CCtx_s {
 #endif
 
 
-#endif /* FL2_COMPRESS_H */
+#endif /* UF2_COMPRESS_H */

@@ -15,13 +15,13 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\fl2_common.c">
+    <ClCompile Include="..\uf2_common.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\fl2_compress.c">
+    <ClCompile Include="..\uf2_compress.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\fl2_decompress.c">
+    <ClCompile Include="..\uf2_decompress.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\lzma2_dec.c">
@@ -48,10 +48,10 @@
     <ClCompile Include="..\util.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\fl2_pool.c">
+    <ClCompile Include="..\uf2_pool.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\fl2_threading.c">
+    <ClCompile Include="..\uf2_threading.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\dict_buffer.c">
@@ -71,19 +71,19 @@
     <ClInclude Include="..\data_block.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\fast-lzma2.h">
+    <ClInclude Include="..\uf-lzma2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\fastpos_table.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\fl2_compress_internal.h">
+    <ClInclude Include="..\uf2_compress_internal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\fl2_errors.h">
+    <ClInclude Include="..\uf2_errors.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\fl2_internal.h">
+    <ClInclude Include="..\uf2_internal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\lzma2_dec.h">
@@ -116,10 +116,10 @@
     <ClInclude Include="..\xxhash.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\fl2_threading.h">
+    <ClInclude Include="..\uf2_threading.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\fl2_pool.h">
+    <ClInclude Include="..\uf2_pool.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\dict_buffer.h">
