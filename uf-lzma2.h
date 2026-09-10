@@ -54,8 +54,8 @@ Introduction
 
 /*------   Version   ------*/
 #define UF2_VERSION_MAJOR    1
-#define UF2_VERSION_MINOR    0
-#define UF2_VERSION_RELEASE  1
+#define UF2_VERSION_MINOR    1
+#define UF2_VERSION_RELEASE  0
 
 #define UF2_VERSION_NUMBER  (UF2_VERSION_MAJOR *100*100 + UF2_VERSION_MINOR *100 + UF2_VERSION_RELEASE)
 UF2LIB_API unsigned UF2LIB_CALL UF2_versionNumber(void);   /**< useful to check dll version */
@@ -135,6 +135,22 @@ UF2LIB_API int         UF2LIB_CALL UF2_maxHighCLevel(void);           /*!< maxim
 /***************************************
 *  Explicit memory management
 ***************************************/
+
+/*! UF2_setAllocator() :
+ *  Custom allocator/deallocator functions passed to this function will be used for all allocations
+ *  and deallocations. This call must occur before any functions which allocate memory are called,
+ *  to ensure that the correct deallocator is called for all blocks. The setting persists until the
+ *  caller detaches from the DLL. Calling UF2_setAllocator() again will have no effect and will
+ *  return an error code. If UF2_setAllocator() is not called, malloc() and free() will be used. */
+UF2LIB_API size_t UF2LIB_CALL UF2_setAllocator(void* (*allocFunction)(size_t size),
+    void (*freeFunction)(void* address));
+
+/*! UF2_setLargeAllocator() :
+ *  Same as UF2_setAllocator() but sets functions for large allocations, i.e. dictionary and
+ *  match tables. If this function is not called, large allocations will use the settings from
+ *  UF2_setAllocator(), if present. */
+UF2LIB_API size_t UF2LIB_CALL UF2_setLargeAllocator(void* (*allocFunction)(size_t size),
+    void(*freeFunction)(void* address));
 
 /*= Compression context
  *  When compressing many times, it is recommended to allocate a context just once,

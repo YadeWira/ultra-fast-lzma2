@@ -26,6 +26,16 @@ extern "C" {
 
 
 /*-****************************************
+*  Custom allocator handlers
+******************************************/
+void *UF2_malloc(size_t size);
+void *UF2_calloc(size_t count, size_t size);
+void UF2_free(void *address);
+void *UF2_large_malloc(size_t size);
+void UF2_large_free(void *address);
+
+
+/*-****************************************
 *  Error codes handling
 ******************************************/
 #define PREFIX(name) UF2_error_##name

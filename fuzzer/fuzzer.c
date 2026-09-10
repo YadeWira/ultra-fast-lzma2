@@ -443,12 +443,29 @@ static int basicUnitTests(unsigned nbThreads, U32 seed, double compressibility)
         size_t r;
         CHECK(UF2_initCStream(cstream, 2));
         UF2_getDictionaryBuffer(cstream, &dict);
+        size_t dict_size = dict.size;
         memcpy(dict.dst, CNBuffer, dict.size);
         CHECK_V(res, UF2_updateDictionary(cstream, dict.size));
         r = dict.size;
         UF2_getDictionaryBuffer(cstream, &dict);
-        memcpy((BYTE*)dict.dst, (BYTE*)CNBuffer + r, r / 2);
-        CHECK(UF2_updateDictionary(cstream, r / 2));
+        unsigned long long cProgress;
+        unsigned long long dProgress = UF2_getCStreamProgress(cstream, &cProgress);
+        /* Should not have blocked unless UF2_SINGLETHREAD defined */
+        if (UF2_getCCtxThreadCount(cstream) > 1 && dProgress > dict.size / 2) goto _output_error;
+        memcpy((BYTE*)dict.dst, (BYTE*)CNBuffer + r, dict.size);
+        r += dict.size;
+        CHECK(UF2_updateDictionary(cstream, dict.size));
+        UF2_getDictionaryBuffer(cstream, &dict);
+        dProgress = UF2_getCStreamProgress(cstream, &cProgress);
+        /* Should have blocked and compressed one dict size only */
+        if (UF2_getCCtxThreadCount(cstream) > 1 && dProgress > dict_size + dict.size / 2) goto _output_error;
+        while (UF2_getNextCompressedBuffer(cstream, &cbuf) != 0) {
+            memcpy((BYTE*)out.dst + out.pos, cbuf.src, cbuf.size);
+            out.pos += cbuf.size;
+        }
+        UF2_getDictionaryBuffer(cstream, &dict);
+        memcpy((BYTE*)dict.dst, (BYTE*)CNBuffer + r, dict.size / 2);
+        CHECK(UF2_updateDictionary(cstream, dict.size / 2));
         r = UF2_endStream(cstream, NULL);
         if (r == 0) goto _output_error;
         while (UF2_getNextCompressedBuffer(cstream, &cbuf) != 0) {

@@ -12,7 +12,6 @@
 
 /* ======   Dependencies   ======= */
 #include <stddef.h>  /* size_t */
-#include <stdlib.h>  /* malloc, calloc */
 #include "uf2_pool.h"
 #include "uf2_internal.h"
 
@@ -92,7 +91,7 @@ UF2POOL_ctx* UF2POOL_create(size_t numThreads)
     /* Check the parameters */
     if (!numThreads) { return NULL; }
     /* Allocate the context and zero initialize */
-    ctx = calloc(1, sizeof(UF2POOL_ctx) + (numThreads - 1) * sizeof(UF2_pthread_t));
+    ctx = UF2_calloc(1, sizeof(UF2POOL_ctx) + (numThreads - 1) * sizeof(UF2_pthread_t));
     if (!ctx) { return NULL; }
     /* Initialize the busy count and jobs range */
     ctx->numThreadsBusy = 0;
@@ -139,7 +138,7 @@ void UF2POOL_free(UF2POOL_ctx *ctx)
     UF2_pthread_mutex_destroy(&ctx->queueMutex);
     UF2_pthread_cond_destroy(&ctx->busyCond);
     UF2_pthread_cond_destroy(&ctx->newJobsCond);
-    free(ctx);
+    UF2_free(ctx);
 }
 
 size_t UF2POOL_sizeof(UF2POOL_ctx *ctx)
@@ -151,7 +150,7 @@ size_t UF2POOL_sizeof(UF2POOL_ctx *ctx)
 void UF2POOL_addRange(void* ctxVoid, UF2POOL_function function, void *opaque, ptrdiff_t first, ptrdiff_t end)
 {
     UF2POOL_ctx* const ctx = (UF2POOL_ctx*)ctxVoid;
-    if (!ctx)
+    if (!ctx || first == end)
 		return; 
 
     /* Callers always wait for jobs to complete before adding a new set */
@@ -193,6 +192,56 @@ int UF2POOL_waitAll(void *ctxVoid, unsigned timeout)
 size_t UF2POOL_threadsBusy(void * ctx)
 {
     return ((UF2POOL_ctx*)ctx)->numThreadsBusy;
+}
+
+#else
+
+struct UF2POOL_ctx_s {
+    int dummy;
+};
+
+UF2POOL_ctx* UF2POOL_create(size_t numThreads)
+{
+    (void)numThreads;
+    return NULL;
+}
+
+void UF2POOL_free(UF2POOL_ctx *ctx)
+{
+    UF2_free(ctx);
+}
+
+size_t UF2POOL_sizeof(UF2POOL_ctx *ctx)
+{
+    (void)ctx;
+    return 0;
+}
+
+void UF2POOL_addRange(void* ctxVoid, UF2POOL_function function, void *opaque, ptrdiff_t first, ptrdiff_t end)
+{
+    (void)ctxVoid;
+    (void)function;
+    (void)opaque;
+    (void)first;
+    (void)end;
+}
+
+void UF2POOL_add(void* ctxVoid, UF2POOL_function function, void *opaque, ptrdiff_t n)
+{
+    UF2POOL_addRange(ctxVoid, function, opaque, n, n + 1);
+}
+
+int UF2POOL_waitAll(void *ctxVoid, unsigned timeout)
+{
+    (void)ctxVoid;
+    (void)timeout;
+    return 0;
+}
+
+size_t UF2POOL_threadsBusy(void * ctx)
+{
+    (void)ctx;
+    return 0;
 }
 
 #endif  /* UF2_SINGLETHREAD */

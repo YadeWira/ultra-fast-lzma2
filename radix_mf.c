@@ -9,7 +9,6 @@
 */
 
 #include <stddef.h>     /* size_t, ptrdiff_t */
-#include <stdlib.h>     /* malloc, free */
 #include "uf-lzma2.h"
 #include "uf2_errors.h"
 #include "mem.h"          /* U32, U64, MEM_64bits */
@@ -22,7 +21,7 @@
 #  pragma warning(disable : 4701) /* warning: 'rpt_head_next' may be used uninitialized in this function */
 #endif
 
-#define MATCH_BUFFER_SHIFT 8;
+#define MATCH_BUFFER_SHIFT 8
 #define MATCH_BUFFER_ELBOW_BITS 17
 #define MATCH_BUFFER_ELBOW (1UL << MATCH_BUFFER_ELBOW_BITS)
 #define MIN_MATCH_BUFFER_SIZE 256U /* min buffer size at least UF2_SEARCH_DEPTH_MAX + 2 for bounded build */
@@ -45,7 +44,7 @@ static RMF_builder* RMF_createBuilder(size_t match_buffer_size)
     match_buffer_size = MIN(match_buffer_size, MAX_MATCH_BUFFER_SIZE);
     match_buffer_size = MAX(match_buffer_size, MIN_MATCH_BUFFER_SIZE);
 
-    RMF_builder* const builder = malloc(
+    RMF_builder* const builder = UF2_malloc(
         sizeof(RMF_builder) + (match_buffer_size - 1) * sizeof(RMF_buildMatch));
 
     if (builder == NULL)
@@ -65,9 +64,9 @@ static void RMF_freeBuilderTable(RMF_builder** const builders, unsigned const si
         return;
 
     for (unsigned i = 0; i < size; ++i)
-        free(builders[i]);
+        UF2_free(builders[i]);
 
-    free(builders);
+    UF2_free(builders);
 }
 
 /* RMF_createBuilderTable() : 
@@ -79,7 +78,7 @@ static RMF_builder** RMF_createBuilderTable(U32* const match_table, size_t const
 {
     DEBUGLOG(3, "RMF_createBuilderTable : match_buffer_size %u, builders %u", (U32)match_buffer_size, size);
 
-    RMF_builder** const builders = malloc(size * sizeof(RMF_builder*));
+    RMF_builder** const builders = UF2_malloc(size * sizeof(RMF_builder*));
 
     if (builders == NULL)
         return NULL;
@@ -125,7 +124,7 @@ static RMF_parameters RMF_clampParams(RMF_parameters params)
 #   undef CLAMP
 }
 
-static size_t RMF_calBufSize(size_t dictionary_size, unsigned buffer_resize)
+static size_t RMF_calcBufSize(size_t dictionary_size, unsigned buffer_resize)
 {
     size_t buffer_size = dictionary_size >> MATCH_BUFFER_SHIFT;
     if (buffer_size > MATCH_BUFFER_ELBOW) {
@@ -144,6 +143,12 @@ static size_t RMF_calBufSize(size_t dictionary_size, unsigned buffer_resize)
     return buffer_size;
 }
 
+static size_t RMF_allocationSize(size_t dictionary_size, int is_struct)
+{
+    return is_struct ? ((dictionary_size + 3U) / 4U) * sizeof(RMF_unit)
+        : dictionary_size * sizeof(U32);
+}
+
 /* RMF_applyParameters_internal() :
  * Set parameters to those specified.
  * Create a builder table if none exists. Free an existing one if incompatible.
@@ -153,15 +158,12 @@ static size_t RMF_calBufSize(size_t dictionary_size, unsigned buffer_resize)
 static size_t RMF_applyParameters_internal(UF2_matchTable* const tbl, const RMF_parameters* const params)
 {
     int const is_struct = RMF_isStruct(params->dictionary_size);
-    size_t const dictionary_size = tbl->params.dictionary_size;
-    /* dictionary is allocated with the struct and is immutable */
-    if (params->dictionary_size > tbl->params.dictionary_size
-        || (params->dictionary_size == tbl->params.dictionary_size && is_struct > tbl->alloc_struct))
+    /* table is allocated with the struct and is immutable */
+    if (RMF_allocationSize(params->dictionary_size, is_struct) > tbl->allocation_size)
         return UF2_ERROR(parameter_unsupported);
 
-    size_t const match_buffer_size = RMF_calBufSize(tbl->unreduced_dict_size, params->match_buffer_resize);
+    size_t const match_buffer_size = RMF_calcBufSize(tbl->unreduced_dict_size, params->match_buffer_resize);
     tbl->params = *params;
-    tbl->params.dictionary_size = dictionary_size;
     tbl->is_struct = is_struct;
     if (tbl->builders == NULL
         || match_buffer_size > tbl->builders[0]->match_buffer_size)
@@ -211,18 +213,16 @@ UF2_matchTable* RMF_createMatchTable(const RMF_parameters* const p, size_t const
     RMF_reduceDict(&params, dict_reduce);
 
     int const is_struct = RMF_isStruct(params.dictionary_size);
-    size_t dictionary_size = params.dictionary_size;
 
-    DEBUGLOG(3, "RMF_createMatchTable : is_struct %d, dict %u", is_struct, (U32)dictionary_size);
+    DEBUGLOG(3, "RMF_createMatchTable : is_struct %d, dict %u", is_struct, (U32)params.dictionary_size);
 
-    size_t const table_bytes = is_struct ? ((dictionary_size + 3U) / 4U) * sizeof(RMF_unit)
-        : dictionary_size * sizeof(U32);
-    UF2_matchTable* const tbl = malloc(sizeof(UF2_matchTable) + table_bytes - sizeof(U32));
+    size_t const table_bytes = RMF_allocationSize(params.dictionary_size, is_struct);
+    UF2_matchTable* const tbl = UF2_large_malloc(sizeof(UF2_matchTable) + table_bytes - sizeof(U32));
     if (tbl == NULL)
         return NULL;
 
+    tbl->allocation_size = table_bytes;
     tbl->is_struct = is_struct;
-    tbl->alloc_struct = is_struct;
     tbl->thread_count = thread_count + !thread_count;
     tbl->params = params;
     tbl->unreduced_dict_size = unreduced_dict_size;
@@ -245,15 +245,14 @@ void RMF_freeMatchTable(UF2_matchTable* const tbl)
     DEBUGLOG(3, "RMF_freeMatchTable");
 
     RMF_freeBuilderTable(tbl->builders, tbl->thread_count);
-    free(tbl);
+    UF2_large_free(tbl);
 }
 
 BYTE RMF_compatibleParameters(const UF2_matchTable* const tbl, const RMF_parameters * const p, size_t const dict_reduce)
 {
     RMF_parameters params = RMF_clampParams(*p);
     RMF_reduceDict(&params, dict_reduce);
-    return tbl->params.dictionary_size > params.dictionary_size
-        || (tbl->params.dictionary_size == params.dictionary_size && tbl->alloc_struct >= RMF_isStruct(params.dictionary_size));
+    return tbl->allocation_size >= RMF_allocationSize(params.dictionary_size, RMF_isStruct(params.dictionary_size));
 }
 
 size_t RMF_applyParameters(UF2_matchTable* const tbl, const RMF_parameters* const p, size_t const dict_reduce)
@@ -734,7 +733,7 @@ BYTE* RMF_getTableAsOutputBuffer(UF2_matchTable* const tbl, size_t const pos)
 size_t RMF_memoryUsage(size_t const dict_size, unsigned const buffer_resize, unsigned const thread_count)
 {
     size_t size = (size_t)(4U + RMF_isStruct(dict_size)) * dict_size;
-    size_t const buf_size = RMF_calBufSize(dict_size, buffer_resize);
+    size_t const buf_size = RMF_calcBufSize(dict_size, buffer_resize);
     size += ((buf_size - 1) * sizeof(RMF_buildMatch) + sizeof(RMF_builder)) * thread_count;
     return size;
 }

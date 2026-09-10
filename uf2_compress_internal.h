@@ -47,8 +47,8 @@ typedef struct {
 } UF2_CCtx_params;
 
 typedef struct {
-    UF2_CCtx* cctx;
-    LZMA2_ECtx* enc;
+    UF2_CCtx *cctx;
+    LZMA2_ECtx *enc;
     UF2_dataBlock block;
     size_t cSize;
 } UF2_job;
@@ -56,10 +56,6 @@ typedef struct {
 struct UF2_CCtx_s {
     DICT_buffer buf;
     UF2_CCtx_params params;
-#ifndef UF2_SINGLETHREAD
-    UF2POOL_ctx* factory;
-    UF2POOL_ctx* compressThread;
-#endif
     UF2_dataBlock curBlock;
     size_t asyncRes;
     size_t threadCount;
@@ -68,8 +64,10 @@ struct UF2_CCtx_s {
     size_t dictMax;
     U64 streamTotal;
     U64 streamCsize;
-    UF2_matchTable* matchTable;
+    UF2_matchTable *matchTable;
 #ifndef UF2_SINGLETHREAD
+    UF2POOL_ctx *pool;
+    UF2POOL_ctx *compressThread;
     U32 timeout;
 #endif
     U32 rmfWeight;

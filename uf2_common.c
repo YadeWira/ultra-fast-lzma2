@@ -14,6 +14,7 @@
 /*-*************************************
 *  Dependencies
 ***************************************/
+#include <stdlib.h>
 #include "uf-lzma2.h"
 #include "uf2_errors.h"
 #include "uf2_internal.h"
@@ -26,6 +27,79 @@
 UF2LIB_API unsigned UF2LIB_CALL UF2_versionNumber(void) { return UF2_VERSION_NUMBER; }
 
 UF2LIB_API const char* UF2LIB_CALL UF2_versionString(void) { return UF2_VERSION_STRING; }
+
+
+/*-****************************************
+*  Custom allocator handlers
+******************************************/
+void* (*UF2_g_alloc)(size_t size);
+void  (*UF2_g_free)(void* address);
+void* (*UF2_g_large_alloc)(size_t size);
+void  (*UF2_g_large_free)(void* address);
+unsigned char UF2_g_alloc_called;
+
+void *UF2_malloc(size_t size)
+{
+    UF2_g_alloc_called = 1;
+    char *address = (UF2_g_alloc != NULL) ? UF2_g_alloc(size) : malloc(size);
+    DEBUGLOG(3, "UF2_malloc: %lu bytes at 0x%lX", (long)size, (long)(address - (char*)0));
+    return address;
+}
+
+void *UF2_calloc(size_t count, size_t size)
+{
+    size *= count;
+    void *block = UF2_malloc(size);
+    if (block != NULL)
+        memset(block, 0, size);
+    return block;
+}
+
+void UF2_free(void *address)
+{
+    DEBUGLOG(3, "UF2_free: 0x%lX", (long)((char*)address - (char*)0));
+    if (UF2_g_free != NULL)
+        UF2_g_free(address);
+    else
+        free(address);
+}
+
+void *UF2_large_malloc(size_t size)
+{
+    UF2_g_alloc_called = 1;
+    char *address = (UF2_g_large_alloc != NULL) ? UF2_g_large_alloc(size) : UF2_malloc(size);
+    DEBUGLOG(3, "UF2_large_malloc: %lu bytes at 0x%lX", (long)size, (long)(address - (char*)0));
+    return address;
+}
+
+void UF2_large_free(void *address)
+{
+    DEBUGLOG(3, "UF2_large_free: 0x%lX", (long)((char*)address - (char*)0));
+    if (UF2_g_large_free != NULL)
+        UF2_g_large_free(address);
+    else
+        UF2_free(address);
+}
+
+UF2LIB_API size_t UF2LIB_CALL UF2_setAllocator(void* (*allocFunction)(size_t size),
+    void(*freeFunction)(void* address))
+{
+    if (UF2_g_alloc_called)
+        return UF2_ERROR(stage_wrong);
+    UF2_g_alloc = allocFunction;
+    UF2_g_free = freeFunction;
+    return UF2_error_no_error;
+}
+
+UF2LIB_API size_t UF2LIB_CALL UF2_setLargeAllocator(void* (*allocFunction)(size_t size),
+    void(*freeFunction)(void* address))
+{
+    if (UF2_g_alloc_called)
+        return UF2_ERROR(stage_wrong);
+    UF2_g_large_alloc = allocFunction;
+    UF2_g_large_free = freeFunction;
+    return UF2_error_no_error;
+}
 
 
 /*-****************************************

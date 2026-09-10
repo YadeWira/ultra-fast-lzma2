@@ -113,7 +113,7 @@ UF2LIB_API int UF2LIB_CALL UF2_maxHighCLevel(void)
     return UF2_MAX_HIGH_CLEVEL;
 }
 
-static void UF2_fillParameters(UF2_CCtx* const cctx, const UF2_compressionParameters* const params)
+static void UF2_fillParameters(UF2_CCtx *const cctx, const UF2_compressionParameters* const params)
 {
     UF2_lzma2Parameters* const cParams = &cctx->params.cParams;
     cParams->lc = 3;
@@ -135,13 +135,165 @@ static void UF2_fillParameters(UF2_CCtx* const cctx, const UF2_compressionParame
 #endif
 }
 
-static UF2_CCtx* UF2_createCCtx_internal(unsigned nbThreads, int const dualBuffer)
+#ifdef UF2_SINGLETHREAD
+
+static inline int UF2_createCCtx_threads(UF2_CCtx *cctx, int const dualBuffer)
+{
+    (void)cctx;
+    (void)dualBuffer;
+    return 0;
+}
+
+static inline void UF2_freeCCtx_threads(UF2_CCtx *cctx)
+{
+    (void)cctx;
+}
+
+static inline void UF2_CCtx_zero_timeout(UF2_CCtx *cctx)
+{
+    (void)cctx;
+}
+
+static inline size_t UF2_mf_threadCount(UF2_CCtx *cctx)
+{
+    (void)cctx;
+    return 1;
+}
+
+static inline size_t UF2_enc_threadCount(UF2_CCtx *cctx)
+{
+    (void)cctx;
+    return 1;
+}
+
+static inline void UF2_cancelCStream_async(UF2_CStream *fcs)
+{
+    (void)fcs;
+}
+
+UF2LIB_API size_t UF2LIB_CALL UF2_setCStreamTimeout(UF2_CStream *fcs, unsigned timeout)
+{
+    (void)fcs;
+    (void)timeout;
+    return UF2_error_no_error;
+}
+
+static inline int UF2_CStream_waitAll(UF2_CStream *fcs)
+{
+    (void)fcs;
+    return 0;
+}
+
+static inline UF2POOL_ctx *UF2_CCtx_asyncThread(UF2_CCtx *cctx)
+{
+    (void)cctx;
+    return NULL;
+}
+
+static inline UF2POOL_ctx *UF2_CCtx_pool(UF2_CCtx *cctx)
+{
+    (void)cctx;
+    return NULL;
+}
+
+#else
+
+static int UF2_createCCtx_threads(UF2_CCtx *cctx, int const dualBuffer)
+{
+    cctx->compressThread = NULL;
+    cctx->pool = UF2POOL_create(cctx->jobCount - 1);
+    if (cctx->jobCount > 1 && cctx->pool == NULL)
+        return -1;
+
+    if (dualBuffer) {
+        cctx->compressThread = UF2POOL_create(1);
+        if (cctx->compressThread == NULL)
+            return -1;
+    }
+    return 0;
+}
+
+static inline void UF2_freeCCtx_threads(UF2_CCtx *cctx)
+{
+    UF2POOL_free(cctx->pool);
+    UF2POOL_free(cctx->compressThread);
+}
+
+static inline void UF2_CCtx_zero_timeout(UF2_CCtx *cctx)
+{
+    UF2POOL_free(cctx->compressThread);
+    cctx->compressThread = NULL;
+    cctx->timeout = 0;
+}
+
+static inline size_t UF2_mf_threadCount(UF2_CCtx *cctx)
+{
+    size_t mfThreads = cctx->curBlock.end / RMF_MIN_BYTES_PER_THREAD;
+    mfThreads = MIN(RMF_threadCount(cctx->matchTable), mfThreads);
+    return mfThreads + !mfThreads;
+}
+
+static inline size_t UF2_enc_threadCount(UF2_CCtx *cctx)
+{
+    size_t const encodeSize = (cctx->curBlock.end - cctx->curBlock.start);
+    size_t nbThreads = MIN(cctx->jobCount, encodeSize / ENC_MIN_BYTES_PER_THREAD);
+    return nbThreads + !nbThreads;
+}
+
+static inline void UF2_cancelCStream_async(UF2_CStream *fcs)
+{
+    if (fcs->compressThread != NULL) {
+        fcs->canceled = 1;
+
+        RMF_cancelBuild(fcs->matchTable);
+        UF2POOL_waitAll(fcs->compressThread, 0);
+
+        fcs->canceled = 0;
+    }
+}
+
+UF2LIB_API size_t UF2LIB_CALL UF2_setCStreamTimeout(UF2_CStream * fcs, unsigned timeout)
+{
+    if (timeout != 0) {
+        if (fcs->compressThread == NULL) {
+            fcs->compressThread = UF2POOL_create(1);
+            if (fcs->compressThread == NULL)
+                return UF2_ERROR(memory_allocation);
+        }
+    }
+    else if (!DICT_async(&fcs->buf) && fcs->dictMax == 0) {
+        /* Only free the thread if not dual buffering and compression not underway */
+        UF2POOL_free(fcs->compressThread);
+        fcs->compressThread = NULL;
+    }
+    fcs->timeout = timeout;
+    return UF2_error_no_error;
+}
+
+static inline int UF2_CStream_waitAll(UF2_CStream *fcs)
+{
+    return UF2POOL_waitAll(fcs->compressThread, fcs->timeout);
+}
+
+static inline UF2POOL_ctx *UF2_CCtx_asyncThread(UF2_CCtx *cctx)
+{
+    return cctx->compressThread;
+}
+
+static inline UF2POOL_ctx *UF2_CCtx_pool(UF2_CCtx *cctx)
+{
+    return cctx->pool;
+}
+
+#endif /* UF2_SINGLETHREAD */
+
+static UF2_CCtx *UF2_createCCtx_internal(unsigned nbThreads, int const dualBuffer)
 {
     nbThreads = UF2_checkNbThreads(nbThreads);
 
     DEBUGLOG(3, "UF2_createCCtxMt : %u threads", nbThreads);
 
-    UF2_CCtx* const cctx = calloc(1, sizeof(UF2_CCtx) + (nbThreads - 1) * sizeof(UF2_job));
+    UF2_CCtx *const cctx = UF2_calloc(1, sizeof(UF2_CCtx) + (nbThreads - 1) * sizeof(UF2_job));
     if (cctx == NULL)
         return NULL;
 
@@ -154,20 +306,12 @@ static UF2_CCtx* UF2_createCCtx_internal(unsigned nbThreads, int const dualBuffe
 #endif
 
     cctx->matchTable = NULL;
+    DICT_construct(&cctx->buf, dualBuffer);
 
-#ifndef UF2_SINGLETHREAD
-    cctx->compressThread = NULL;
-    cctx->factory = UF2POOL_create(nbThreads - 1);
-    if (nbThreads > 1 && cctx->factory == NULL) {
-        UF2_freeCCtx(cctx);
+    if(UF2_createCCtx_threads(cctx, dualBuffer)) {
+        UF2_free(cctx);
         return NULL;
     }
-    if (dualBuffer) {
-      cctx->compressThread = UF2POOL_create(1);
-      if (cctx->compressThread == NULL)
-        return NULL;
-    }
-#endif
 
     for (unsigned u = 0; u < nbThreads; ++u) {
         cctx->jobs[u].enc = LZMA2_createECtx();
@@ -177,8 +321,6 @@ static UF2_CCtx* UF2_createCCtx_internal(unsigned nbThreads, int const dualBuffe
         }
         cctx->jobs[u].cctx = cctx;
     }
-
-    DICT_construct(&cctx->buf, dualBuffer);
 
     UF2_CCtx_setParameter(cctx, UF2_p_compressionLevel, UF2_CLEVEL_DEFAULT);
     cctx->params.cParams.reset_interval = 4;
@@ -196,29 +338,26 @@ UF2LIB_API UF2_CCtx* UF2LIB_CALL UF2_createCCtxMt(unsigned nbThreads)
     return UF2_createCCtx_internal(nbThreads, 0);
 }
 
-UF2LIB_API void UF2LIB_CALL UF2_freeCCtx(UF2_CCtx* cctx)
+UF2LIB_API void UF2LIB_CALL UF2_freeCCtx(UF2_CCtx *cctx)
 {
     if (cctx == NULL) 
         return;
 
     DEBUGLOG(3, "UF2_freeCCtx : %u threads", cctx->jobCount);
 
-    DICT_destruct(&cctx->buf);
+    DICT_free(&cctx->buf);
 
     for (unsigned u = 0; u < cctx->jobCount; ++u) {
         LZMA2_freeECtx(cctx->jobs[u].enc);
     }
 
-#ifndef UF2_SINGLETHREAD
-    UF2POOL_free(cctx->factory);
-    UF2POOL_free(cctx->compressThread);
-#endif
+    UF2_freeCCtx_threads(cctx);
 
     RMF_freeMatchTable(cctx->matchTable);
-    free(cctx);
+    UF2_free(cctx);
 }
 
-UF2LIB_API unsigned UF2LIB_CALL UF2_getCCtxThreadCount(const UF2_CCtx* cctx)
+UF2LIB_API unsigned UF2LIB_CALL UF2_getCCtxThreadCount(const UF2_CCtx *cctx)
 {
     return cctx->jobCount;
 }
@@ -226,7 +365,7 @@ UF2LIB_API unsigned UF2LIB_CALL UF2_getCCtxThreadCount(const UF2_CCtx* cctx)
 /* UF2_buildRadixTable() : UF2POOL_function type */
 static void UF2_buildRadixTable(void* const jobDescription, ptrdiff_t const n)
 {
-    UF2_CCtx* const cctx = (UF2_CCtx*)jobDescription;
+    UF2_CCtx *const cctx = (UF2_CCtx*)jobDescription;
 
     RMF_buildTable(cctx->matchTable, n, 1, cctx->curBlock);
 }
@@ -234,7 +373,7 @@ static void UF2_buildRadixTable(void* const jobDescription, ptrdiff_t const n)
 /* UF2_compressRadixChunk() : UF2POOL_function type */
 static void UF2_compressRadixChunk(void* const jobDescription, ptrdiff_t const n)
 {
-    UF2_CCtx* const cctx = (UF2_CCtx*)jobDescription;
+    UF2_CCtx *const cctx = (UF2_CCtx*)jobDescription;
 
     cctx->jobs[n].cSize = LZMA2_encode(cctx->jobs[n].enc, cctx->matchTable,
         cctx->jobs[n].block,
@@ -243,7 +382,7 @@ static void UF2_compressRadixChunk(void* const jobDescription, ptrdiff_t const n
         &cctx->progressIn, &cctx->progressOut, &cctx->canceled);
 }
 
-static int UF2_initEncoders(UF2_CCtx* const cctx)
+static int UF2_initEncoders(UF2_CCtx *const cctx)
 {
     for(unsigned u = 0; u < cctx->jobCount; ++u) {
         if (LZMA2_hashAlloc(cctx->jobs[u].enc, &cctx->params.cParams) != 0)
@@ -252,7 +391,7 @@ static int UF2_initEncoders(UF2_CCtx* const cctx)
     return 0;
 }
 
-static void UF2_initProgress(UF2_CCtx* const cctx)
+static void UF2_initProgress(UF2_CCtx *const cctx)
 {
     RMF_initProgress(cctx->matchTable);
     cctx->progressIn = 0;
@@ -265,17 +404,10 @@ static void UF2_initProgress(UF2_CCtx* const cctx)
  * Compress cctx->curBlock and wait until complete.
  * Write streamProp as the first byte if >= 0
  */
-static size_t UF2_compressCurBlock_blocking(UF2_CCtx* const cctx, int const streamProp)
+static size_t UF2_compressCurBlock_blocking(UF2_CCtx *const cctx, int const streamProp)
 {
     size_t const encodeSize = (cctx->curBlock.end - cctx->curBlock.start);
-#ifndef UF2_SINGLETHREAD
-    size_t mfThreads = cctx->curBlock.end / RMF_MIN_BYTES_PER_THREAD;
-    size_t nbThreads = MIN(cctx->jobCount, encodeSize / ENC_MIN_BYTES_PER_THREAD);
-    nbThreads += !nbThreads;
-#else
-    size_t mfThreads = 1;
-    size_t nbThreads = 1;
-#endif
+    size_t nbThreads = UF2_enc_threadCount(cctx);
 
     DEBUGLOG(5, "UF2_compressCurBlock : %u threads, %u start, %u bytes", (U32)nbThreads, (U32)cctx->curBlock.start, (U32)encodeSize);
 
@@ -301,18 +433,12 @@ static size_t UF2_compressCurBlock_blocking(UF2_CCtx* const cctx, int const stre
         return UF2_ERROR(canceled);
     }
 
-#ifndef UF2_SINGLETHREAD
-
-    mfThreads = MIN(RMF_threadCount(cctx->matchTable), mfThreads);
-    UF2POOL_addRange(cctx->factory, UF2_buildRadixTable, cctx, 1, mfThreads);
-
-#endif
+    size_t mfThreads = UF2_mf_threadCount(cctx);
+    UF2POOL_addRange(UF2_CCtx_pool(cctx), UF2_buildRadixTable, cctx, 1, mfThreads);
 
     int err = RMF_buildTable(cctx->matchTable, 0, mfThreads > 1, cctx->curBlock);
 
-#ifndef UF2_SINGLETHREAD
-
-    UF2POOL_waitAll(cctx->factory, 0);
+    UF2POOL_waitAll(UF2_CCtx_pool(cctx), 0);
 
     if (err)
         return UF2_ERROR(canceled);
@@ -323,31 +449,14 @@ static size_t UF2_compressCurBlock_blocking(UF2_CCtx* const cctx, int const stre
         return UF2_ERROR(internal);
 #endif
 
-    UF2POOL_addRange(cctx->factory, UF2_compressRadixChunk, cctx, 1, nbThreads);
+    UF2POOL_addRange(UF2_CCtx_pool(cctx), UF2_compressRadixChunk, cctx, 1, nbThreads);
 
     cctx->jobs[0].cSize = LZMA2_encode(cctx->jobs[0].enc, cctx->matchTable,
         cctx->jobs[0].block,
         &cctx->params.cParams, streamProp,
         &cctx->progressIn, &cctx->progressOut, &cctx->canceled);
 
-    UF2POOL_waitAll(cctx->factory, 0);
-
-#else /* UF2_SINGLETHREAD */
-
-    if (err)
-        return UF2_ERROR(canceled);
-
-#ifdef RMF_CHECK_INTEGRITY
-    err = RMF_integrityCheck(cctx->matchTable, cctx->curBlock.data, cctx->curBlock.start, cctx->curBlock.end, cctx->params.rParams.depth);
-    if (err)
-        return UF2_ERROR(internal);
-#endif
-    cctx->jobs[0].cSize = LZMA2_encode(cctx->jobs[0].enc, cctx->matchTable,
-        cctx->jobs[0].block,
-        &cctx->params.cParams, streamProp,
-        &cctx->progressIn, &cctx->progressOut, &cctx->canceled);
-
-#endif
+    UF2POOL_waitAll(UF2_CCtx_pool(cctx), 0);
 
     for (size_t u = 0; u < nbThreads; ++u)
         if (UF2_isError(cctx->jobs[u].cSize))
@@ -361,7 +470,7 @@ static size_t UF2_compressCurBlock_blocking(UF2_CCtx* const cctx, int const stre
 /* UF2_compressCurBlock_async() : UF2POOL_function type */
 static void UF2_compressCurBlock_async(void* const jobDescription, ptrdiff_t const n)
 {
-    UF2_CCtx* const cctx = (UF2_CCtx*)jobDescription;
+    UF2_CCtx *const cctx = (UF2_CCtx*)jobDescription;
 
     cctx->asyncRes = UF2_compressCurBlock_blocking(cctx, (int)n);
 }
@@ -372,7 +481,7 @@ static void UF2_compressCurBlock_async(void* const jobDescription, ptrdiff_t con
  * Init progress info.
  * Start compression of cctx->curBlock, and wait for completion if no async compression thread exists.
  */
-static size_t UF2_compressCurBlock(UF2_CCtx* const cctx, int const streamProp)
+static size_t UF2_compressCurBlock(UF2_CCtx *const cctx, int const streamProp)
 {
     UF2_initProgress(cctx);
 
@@ -409,11 +518,9 @@ static size_t UF2_compressCurBlock(UF2_CCtx* const cctx, int const streamProp)
     cctx->rmfWeight = rmfWeight;
     cctx->encWeight = encWeight;
 
-#ifndef UF2_SINGLETHREAD
-    if(cctx->compressThread != NULL)
-        UF2POOL_add(cctx->compressThread, UF2_compressCurBlock_async, cctx, streamProp);
+    if(UF2_CCtx_asyncThread(cctx) != NULL)
+        UF2POOL_add(UF2_CCtx_asyncThread(cctx), UF2_compressCurBlock_async, cctx, streamProp);
     else
-#endif
         cctx->asyncRes = UF2_compressCurBlock_blocking(cctx, streamProp);
 
     return cctx->asyncRes;
@@ -422,7 +529,7 @@ static size_t UF2_compressCurBlock(UF2_CCtx* const cctx, int const streamProp)
 /* UF2_getProp() :
  * Get the LZMA2 dictionary size property byte. If xxhash is enabled, includes the xxhash flag bit.
  */
-static BYTE UF2_getProp(UF2_CCtx* const cctx, size_t const dictionarySize)
+static BYTE UF2_getProp(UF2_CCtx *const cctx, size_t const dictionarySize)
 {
 #ifndef NO_XXHASH
     return LZMA2_getDictSizeProp(dictionarySize) | (BYTE)((cctx->params.doXXH != 0) << UF2_PROP_HASH_BIT);
@@ -432,7 +539,7 @@ static BYTE UF2_getProp(UF2_CCtx* const cctx, size_t const dictionarySize)
 #endif
 }
 
-static void UF2_preBeginFrame(UF2_CCtx* const cctx, size_t const dictReduce)
+static void UF2_preBeginFrame(UF2_CCtx *const cctx, size_t const dictReduce)
 {
     /* Free unsuitable match table before reallocating anything else */
     if (cctx->matchTable && !RMF_compatibleParameters(cctx->matchTable, &cctx->params.rParams, dictReduce)) {
@@ -441,7 +548,7 @@ static void UF2_preBeginFrame(UF2_CCtx* const cctx, size_t const dictReduce)
     }
 }
 
-static size_t UF2_beginFrame(UF2_CCtx* const cctx, size_t const dictReduce)
+static size_t UF2_beginFrame(UF2_CCtx *const cctx, size_t const dictReduce)
 {
     if (UF2_initEncoders(cctx) != 0) /* Create hash objects together, leaving the (large) match table last */
         return UF2_ERROR(memory_allocation);
@@ -473,7 +580,7 @@ static size_t UF2_beginFrame(UF2_CCtx* const cctx, size_t const dictReduce)
     return UF2_error_no_error;
 }
 
-static void UF2_endFrame(UF2_CCtx* const cctx)
+static void UF2_endFrame(UF2_CCtx *const cctx)
 {
     cctx->dictMax = 0;
     cctx->asyncRes = 0;
@@ -484,7 +591,7 @@ static void UF2_endFrame(UF2_CCtx* const cctx)
  * The property byte is written first unless the omit flag is set.
  * Return: compressed size.
  */
-static size_t UF2_compressBuffer(UF2_CCtx* const cctx,
+static size_t UF2_compressBuffer(UF2_CCtx *const cctx,
     const void* const src, size_t srcSize,
     void* const dst, size_t dstCapacity)
 {
@@ -537,7 +644,7 @@ static size_t UF2_compressBuffer(UF2_CCtx* const cctx,
     return dstBuf - (const BYTE*)dst;
 }
 
-UF2LIB_API size_t UF2LIB_CALL UF2_compressCCtx(UF2_CCtx* cctx,
+UF2LIB_API size_t UF2LIB_CALL UF2_compressCCtx(UF2_CCtx *cctx,
     void* dst, size_t dstCapacity,
     const void* src, size_t srcSize,
     int compressionLevel)
@@ -550,12 +657,8 @@ UF2LIB_API size_t UF2LIB_CALL UF2_compressCCtx(UF2_CCtx* cctx,
 
     DEBUGLOG(4, "UF2_compressCCtx : level %u, %u src => %u avail", cctx->params.compressionLevel, (U32)srcSize, (U32)dstCapacity);
 
-#ifndef UF2_SINGLETHREAD
     /* No async compression for in-memory function */
-    UF2POOL_free(cctx->compressThread);
-    cctx->compressThread = NULL;
-    cctx->timeout = 0;
-#endif
+    UF2_CCtx_zero_timeout(cctx);
 
     UF2_preBeginFrame(cctx, srcSize);
     CHECK_F(UF2_beginFrame(cctx, srcSize));
@@ -599,7 +702,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_compressMt(void* dst, size_t dstCapacity,
     int compressionLevel,
     unsigned nbThreads)
 {
-    UF2_CCtx* const cctx = UF2_createCCtxMt(nbThreads);
+    UF2_CCtx *const cctx = UF2_createCCtxMt(nbThreads);
     if (cctx == NULL)
         return UF2_ERROR(memory_allocation);
 
@@ -617,7 +720,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_compress(void* dst, size_t dstCapacity,
     return UF2_compressMt(dst, dstCapacity, src, srcSize, compressionLevel, 1);
 }
 
-UF2LIB_API BYTE UF2LIB_CALL UF2_getCCtxDictProp(UF2_CCtx* cctx)
+UF2LIB_API BYTE UF2LIB_CALL UF2_getCCtxDictProp(UF2_CCtx *cctx)
 {
     return LZMA2_getDictSizeProp(cctx->dictMax ? cctx->dictMax : cctx->params.rParams.dictionary_size);
 }
@@ -633,7 +736,7 @@ UF2LIB_API BYTE UF2LIB_CALL UF2_getCCtxDictProp(UF2_CCtx* cctx)
 }   } while(0)
 
 
-UF2LIB_API size_t UF2LIB_CALL UF2_CCtx_setParameter(UF2_CCtx* cctx, UF2_cParameter param, size_t value)
+UF2LIB_API size_t UF2LIB_CALL UF2_CCtx_setParameter(UF2_CCtx *cctx, UF2_cParameter param, size_t value)
 {
     if (cctx->lockParams
         && param != UF2_p_literalCtxBits && param != UF2_p_literalPosBits && param != UF2_p_posBits)
@@ -755,7 +858,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_CCtx_setParameter(UF2_CCtx* cctx, UF2_cParamet
     return value;
 }
 
-UF2LIB_API size_t UF2LIB_CALL UF2_CCtx_getParameter(UF2_CCtx* cctx, UF2_cParameter param)
+UF2LIB_API size_t UF2LIB_CALL UF2_CCtx_getParameter(UF2_CCtx *cctx, UF2_cParameter param)
 {
     switch (param)
     {
@@ -867,7 +970,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_initCStream(UF2_CStream* fcs, int compressionL
 
     /* Free unsuitable objects before reallocating anything new */
     if (DICT_size(buf) < dictSize)
-        DICT_destruct(buf);
+        DICT_free(buf);
 
     UF2_preBeginFrame(fcs, 0);
 
@@ -883,26 +986,6 @@ UF2LIB_API size_t UF2LIB_CALL UF2_initCStream(UF2_CStream* fcs, int compressionL
     CHECK_F(UF2_beginFrame(fcs, 0));
 
     return 0;
-}
-
-UF2LIB_API size_t UF2LIB_CALL UF2_setCStreamTimeout(UF2_CStream * fcs, unsigned timeout)
-{
-#ifndef UF2_SINGLETHREAD
-    if (timeout != 0) {
-        if (fcs->compressThread == NULL) {
-            fcs->compressThread = UF2POOL_create(1);
-            if (fcs->compressThread == NULL)
-                return UF2_ERROR(memory_allocation);
-        }
-    }
-    else if (!DICT_async(&fcs->buf) && fcs->dictMax == 0) {
-        /* Only free the thread if not dual buffering and compression not underway */
-        UF2POOL_free(fcs->compressThread);
-        fcs->compressThread = NULL;
-    }
-    fcs->timeout = timeout;
-#endif
-    return UF2_error_no_error;
 }
 
 static size_t UF2_compressStream_internal(UF2_CStream* const fcs, int const ending)
@@ -1065,9 +1148,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_getNextCompressedBuffer(UF2_CStream* fcs, UF2_
     cbuf->src = NULL;
     cbuf->size = 0;
 
-#ifndef UF2_SINGLETHREAD
     CHECK_F(UF2_waitCStream(fcs));
-#endif
 
     if (fcs->outThread < fcs->threadCount) {
         cbuf->src = RMF_getTableAsOutputBuffer(fcs->matchTable, fcs->jobs[fcs->outThread].block.start) + fcs->outPos;
@@ -1093,26 +1174,15 @@ UF2LIB_API unsigned long long UF2LIB_CALL UF2_getCStreamProgress(const UF2_CStre
 
 UF2LIB_API size_t UF2LIB_CALL UF2_waitCStream(UF2_CStream * fcs)
 {
-#ifndef UF2_SINGLETHREAD
-    if (UF2POOL_waitAll(fcs->compressThread, fcs->timeout) != 0)
+    if (UF2_CStream_waitAll(fcs) != 0)
         return UF2_ERROR(timedOut);
     CHECK_F(fcs->asyncRes);
-#endif
     return fcs->outThread < fcs->threadCount;
 }
 
 UF2LIB_API void UF2LIB_CALL UF2_cancelCStream(UF2_CStream *fcs)
 {
-#ifndef UF2_SINGLETHREAD
-    if (fcs->compressThread != NULL) {
-        fcs->canceled = 1;
-
-        RMF_cancelBuild(fcs->matchTable);
-        UF2POOL_waitAll(fcs->compressThread, 0);
-
-        fcs->canceled = 0;
-    }
-#endif
+    UF2_cancelCStream_async(fcs);
     UF2_endFrame(fcs);
 }
 

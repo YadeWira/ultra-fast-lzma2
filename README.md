@@ -85,6 +85,22 @@ earlier version was released in the 7-Zip forks linked above. The library is con
 However, no warranty or fitness for a particular purpose is expressed or implied.
 
 
+
+Changes in v1.1.0:
+
+This release is Conor McCarthy's unreleased dev branch, which sat unpublished after v1.0.1. Every
+commit on it other than the two security fixes already in master was carried over.
+
+- Added support for custom allocators.
+- Replaced alloc_struct with allocation_size and used it for the compatibility check.
+- Greatly reduced the number of UF2_SINGLETHREAD ifdefs.
+- New lit_pos_mask formula, folding the position and the previous symbol into a single masked
+  operation for literal probability indexing. Compressed output is unchanged.
+- Changed cache_size to size_t and removed some unused functions.
+- Renamed DICT_destruct to DICT_free, RMF_calBufSize, the CCtx 'factory' to 'pool', and the custom
+  allocator functions.
+- Added a test for the async behaviour of the dual buffer cstream, and DEBUGLOG on deallocation.
+
 Changes in v1.0.1:
 
 - The root makefile for GNU make now builds and installs a shared library and headers.

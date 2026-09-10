@@ -92,7 +92,7 @@ UF2LIB_API UF2_DCtx *UF2LIB_CALL UF2_createDCtxMt(unsigned nbThreads)
 {
     DEBUGLOG(3, "UF2_createDCtx");
 
-    UF2_DCtx* const dctx = malloc(sizeof(UF2_DCtx));
+    UF2_DCtx* const dctx = UF2_malloc(sizeof(UF2_DCtx));
 
     if (dctx == NULL)
         return NULL;
@@ -109,7 +109,7 @@ UF2LIB_API UF2_DCtx *UF2LIB_CALL UF2_createDCtxMt(unsigned nbThreads)
     dctx->factory = NULL;
 
     if (nbThreads > 1) {
-        dctx->blocks = malloc(nbThreads * sizeof(UF2_blockDecMt));
+        dctx->blocks = UF2_malloc(nbThreads * sizeof(UF2_blockDecMt));
         dctx->factory = UF2POOL_create(nbThreads - 1);
 
         if (dctx->blocks == NULL || dctx->factory == NULL) {
@@ -120,7 +120,7 @@ UF2LIB_API UF2_DCtx *UF2LIB_CALL UF2_createDCtxMt(unsigned nbThreads)
 
         for (; dctx->nbThreads < nbThreads; ++dctx->nbThreads) {
 
-            dctx->blocks[dctx->nbThreads].dec = malloc(sizeof(LZMA2_DCtx));
+            dctx->blocks[dctx->nbThreads].dec = UF2_malloc(sizeof(LZMA2_DCtx));
 
             if (dctx->blocks[dctx->nbThreads].dec == NULL) {
                 UF2_freeDCtx(dctx);
@@ -147,13 +147,13 @@ UF2LIB_API size_t UF2LIB_CALL UF2_freeDCtx(UF2_DCtx* dctx)
     if (dctx->blocks != NULL) {
         for (unsigned thread = 1; thread < dctx->nbThreads; ++thread) {
             LZMA_destructDCtx(dctx->blocks[thread].dec);
-            free(dctx->blocks[thread].dec);
+            UF2_free(dctx->blocks[thread].dec);
         }
-        free(dctx->blocks);
+        UF2_free(dctx->blocks);
     }
     UF2POOL_free(dctx->factory);
 #endif
-    free(dctx);
+    UF2_free(dctx);
 
     return UF2_error_no_error;
 }
@@ -301,7 +301,7 @@ static size_t UF2_decompressDCtxMt(UF2_DCtx* const dctx,
     return UF2_ERROR(srcSize_wrong);
 }
 
-#endif
+#endif /* !defined UF2_SINGLETHREAD */
 
 UF2LIB_API size_t UF2LIB_CALL UF2_initDCtx(UF2_DCtx * dctx, unsigned char prop)
 {
@@ -341,7 +341,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_decompressDCtx(UF2_DCtx* dctx,
         dctx->lzma2prop = prop;
         res = UF2_decompressDCtxMt(dctx, dst, dstCapacity, srcBuf, &srcPos);
     }
-    else 
+    else
 #endif
     {
         CHECK_F(LZMA2_initDecoder(&dctx->dec, prop, dst, dstCapacity));
@@ -394,6 +394,7 @@ typedef enum
 } UF2_decStage;
 
 #ifndef UF2_SINGLETHREAD
+
 typedef struct UF2_decInbuf_s UF2_decInbuf;
 
 struct UF2_decInbuf_s
@@ -442,7 +443,8 @@ typedef struct
 #endif
     UF2_decJob threads[1];
 } UF2_decMt;
-#endif
+
+#endif /* !defined UF2_SINGLETHREAD */
 
 #define LZMA_OVERLAP_SIZE (LZMA_REQUIRED_INPUT_MAX * 2)
 
@@ -543,7 +545,7 @@ static void LZMA2_freeInbufNodeChain(UF2_decMt *const decmt, UF2_decInbuf *node,
         UF2_decInbuf *const next = node->next;
         if (node != keep) {
             decmt->memTotal -= sizeof(UF2_decInbuf) + LZMA2_MT_INPUT_SIZE - 1;
-            free(node);
+            UF2_free(node);
         }
         else {
             node->next = NULL;
@@ -565,7 +567,7 @@ static void UF2_freeOutputBuffers(UF2_decMt *const decmt)
     for (size_t thread = 0; thread < decmt->maxThreads; ++thread)
         if(decmt->threads[thread].outBuf != NULL) {
             decmt->memTotal -= decmt->threads[thread].bufSize;
-            free(decmt->threads[thread].outBuf);
+            UF2_large_free(decmt->threads[thread].outBuf);
             decmt->threads[thread].outBuf = NULL;
         }
     decmt->numThreads = 0;
@@ -585,7 +587,7 @@ static void UF2_lzma2DecMt_free(UF2_decMt *const decmt)
         UF2_freeOutputBuffers(decmt);
         LZMA2_freeInbufNodeChain(decmt, decmt->head, NULL);
         UF2POOL_free(decmt->factory);
-        free(decmt);
+        UF2_free(decmt);
     }
 }
 
@@ -627,7 +629,7 @@ static UF2_decInbuf * UF2_createInbufNode(UF2_decMt *const decmt, UF2_decInbuf *
     if (decmt->memTotal > decmt->memLimit)
         return NULL;
 
-    UF2_decInbuf *const node = malloc(sizeof(UF2_decInbuf) + LZMA2_MT_INPUT_SIZE - 1);
+    UF2_decInbuf *const node = UF2_malloc(sizeof(UF2_decInbuf) + LZMA2_MT_INPUT_SIZE - 1);
     if (node == NULL)
         return NULL;
 
@@ -646,7 +648,7 @@ static UF2_decMt *UF2_lzma2DecMt_create(unsigned maxThreads)
 {
     maxThreads += !maxThreads;
 
-    UF2_decMt *const decmt = malloc(sizeof(UF2_decMt) + (maxThreads - 1) * sizeof(UF2_decJob));
+    UF2_decMt *const decmt = UF2_malloc(sizeof(UF2_decMt) + (maxThreads - 1) * sizeof(UF2_decJob));
     if (decmt == NULL)
         return NULL;
 
@@ -657,7 +659,7 @@ static UF2_decMt *UF2_lzma2DecMt_create(unsigned maxThreads)
     /* The head always exists and is only freed on deallocation */
     decmt->head = UF2_createInbufNode(decmt, NULL);
     if (decmt->head == NULL) {
-        free(decmt);
+        UF2_free(decmt);
         return NULL;
     }
 
@@ -850,7 +852,7 @@ static size_t UF2_handleFinalChunkMt(UF2_decMt *const decmt, size_t res)
         return UF2_ERROR(memory_allocation);
 
     /* Decompressed data will be stored in outBuf */
-    done->outBuf = malloc(done->bufSize);
+    done->outBuf = UF2_large_malloc(done->bufSize);
     if (done->outBuf == NULL)
         return UF2_ERROR(memory_allocation);
 
@@ -1017,7 +1019,100 @@ static size_t UF2_decompressStreamMt(UF2_DStream* const fds, UF2_outBuffer* cons
     return fds->stage != UF2DEC_STAGE_FINISHED;
 }
 
-#endif /* UF2_SINGLETHREAD */
+UF2LIB_API void UF2LIB_CALL UF2_setDStreamMemoryLimitMt(UF2_DStream * fds, size_t limit)
+{
+    if (fds->decmt != NULL)
+        fds->decmt->memLimit = limit;
+}
+
+UF2LIB_API size_t UF2LIB_CALL UF2_setDStreamTimeout(UF2_DStream * fds, unsigned timeout)
+{
+    /* decompressThread is only used if a timeout is specified */
+    if (timeout != 0) {
+        if (fds->decompressThread == NULL) {
+            fds->decompressThread = UF2POOL_create(1);
+            if (fds->decompressThread == NULL)
+                return UF2_ERROR(memory_allocation);
+        }
+    }
+    else if (!fds->wait) {
+        /* Only free the thread if decompression not underway */
+        UF2POOL_free(fds->decompressThread);
+        fds->decompressThread = NULL;
+    }
+    fds->timeout = timeout;
+    return UF2_error_no_error;
+}
+
+UF2LIB_API size_t UF2LIB_CALL UF2_waitDStream(UF2_DStream * fds)
+{
+    if (UF2POOL_waitAll(fds->decompressThread, fds->timeout) != 0)
+        return UF2_ERROR(timedOut);
+    /* decompressThread writes the result into asyncRes before sleeping */
+    return fds->asyncRes;
+}
+
+UF2LIB_API void UF2LIB_CALL UF2_cancelDStream(UF2_DStream *fds)
+{
+    if (fds->decompressThread != NULL) {
+        fds->decmt->canceled = 1;
+
+        UF2POOL_waitAll(fds->decompressThread, 0);
+
+        fds->decmt->canceled = 0;
+    }
+    UF2_lzma2DecMt_cleanup(fds->decmt);
+}
+
+static inline void UF2_createDStream_threads(UF2_DStream *fds, unsigned nbThreads)
+{
+    fds->decompressThread = NULL;
+    fds->decmt = (nbThreads > 1) ? UF2_lzma2DecMt_create(nbThreads) : NULL;
+}
+
+static inline void UF2_freeDStream_threads(UF2_DStream* fds)
+{
+    UF2POOL_free(fds->decompressThread);
+    UF2_lzma2DecMt_free(fds->decmt);
+}
+
+#else /* UF2_SINGLETHREAD */
+
+UF2LIB_API void UF2LIB_CALL UF2_setDStreamMemoryLimitMt(UF2_DStream * fds, size_t limit)
+{
+    (void)fds;
+    (void)limit;
+}
+
+UF2LIB_API size_t UF2LIB_CALL UF2_setDStreamTimeout(UF2_DStream * fds, unsigned timeout)
+{
+    (void)fds;
+    (void)timeout;
+    return UF2_error_no_error;
+}
+
+UF2LIB_API size_t UF2LIB_CALL UF2_waitDStream(UF2_DStream * fds)
+{
+    return fds->asyncRes;
+}
+
+UF2LIB_API void UF2LIB_CALL UF2_cancelDStream(UF2_DStream *fds)
+{
+    (void)fds;
+}
+
+static inline void UF2_createDStream_threads(UF2_DStream *fds, unsigned nbThreads)
+{
+    (void)fds;
+    (void)nbThreads;
+}
+
+static inline void UF2_freeDStream_threads(UF2_DStream* fds)
+{
+    (void)fds;
+}
+
+#endif /* !defined UF2_SINGLETHREAD */
 
 UF2LIB_API UF2_DStream* UF2LIB_CALL UF2_createDStream(void)
 {
@@ -1040,7 +1135,7 @@ static void UF2_resetDStream(UF2_DStream *fds)
 
 UF2LIB_API UF2_DStream *UF2LIB_CALL UF2_createDStreamMt(unsigned nbThreads)
 {
-    UF2_DStream* const fds = malloc(sizeof(UF2_DStream));
+    UF2_DStream* const fds = UF2_malloc(sizeof(UF2_DStream));
     DEBUGLOG(3, "UF2_createDStream");
 
     if (fds != NULL) {
@@ -1051,10 +1146,7 @@ UF2LIB_API UF2_DStream *UF2LIB_CALL UF2_createDStreamMt(unsigned nbThreads)
         UF2_resetDStream(fds);
         fds->timeout = 0;
 
-#ifndef UF2_SINGLETHREAD
-        fds->decompressThread = NULL;
-        fds->decmt = (nbThreads > 1) ? UF2_lzma2DecMt_create(nbThreads) : NULL;
-#endif
+        UF2_createDStream_threads(fds, nbThreads);
 
 #ifndef NO_XXHASH
         fds->xxh = NULL;
@@ -1070,24 +1162,13 @@ UF2LIB_API size_t UF2LIB_CALL UF2_freeDStream(UF2_DStream* fds)
     if (fds != NULL) {
         DEBUGLOG(3, "UF2_freeDStream");
         LZMA_destructDCtx(&fds->dec);
-#ifndef UF2_SINGLETHREAD
-        UF2POOL_free(fds->decompressThread);
-        UF2_lzma2DecMt_free(fds->decmt);
-#endif
+        UF2_freeDStream_threads(fds);
 #ifndef NO_XXHASH
         XXH32_freeState(fds->xxh);
 #endif
-        free(fds);
+        UF2_free(fds);
     }
     return 0;
-}
-
-UF2LIB_API void UF2LIB_CALL UF2_setDStreamMemoryLimitMt(UF2_DStream * fds, size_t limit)
-{
-#ifndef UF2_SINGLETHREAD
-    if (fds->decmt != NULL)
-        fds->decmt->memLimit = limit;
-#endif
 }
 
 UF2LIB_API size_t UF2LIB_CALL UF2_initDStream(UF2_DStream* fds)
@@ -1103,51 +1184,6 @@ UF2LIB_API size_t UF2LIB_CALL UF2_initDStream(UF2_DStream* fds)
     UF2_lzma2DecMt_init(fds->decmt);
 #endif
     return UF2_error_no_error;
-}
-
-UF2LIB_API size_t UF2LIB_CALL UF2_setDStreamTimeout(UF2_DStream * fds, unsigned timeout)
-{
-#ifndef UF2_SINGLETHREAD
-    /* decompressThread is only used if a timeout is specified */
-    if (timeout != 0) {
-        if (fds->decompressThread == NULL) {
-            fds->decompressThread = UF2POOL_create(1);
-            if (fds->decompressThread == NULL)
-                return UF2_ERROR(memory_allocation);
-        }
-    }
-    else if (!fds->wait) {
-        /* Only free the thread if decompression not underway */
-        UF2POOL_free(fds->decompressThread);
-        fds->decompressThread = NULL;
-    }
-    fds->timeout = timeout;
-#endif
-    return UF2_error_no_error;
-}
-
-UF2LIB_API size_t UF2LIB_CALL UF2_waitDStream(UF2_DStream * fds)
-{
-#ifndef UF2_SINGLETHREAD
-    if (UF2POOL_waitAll(fds->decompressThread, fds->timeout) != 0)
-        return UF2_ERROR(timedOut);
-#endif
-    /* decompressThread writes the result into asyncRes before sleeping */
-    return fds->asyncRes;
-}
-
-UF2LIB_API void UF2LIB_CALL UF2_cancelDStream(UF2_DStream *fds)
-{
-#ifndef UF2_SINGLETHREAD
-    if (fds->decompressThread != NULL) {
-        fds->decmt->canceled = 1;
-
-        UF2POOL_waitAll(fds->decompressThread, 0);
-
-        fds->decmt->canceled = 0;
-    }
-    UF2_lzma2DecMt_cleanup(fds->decmt);
-#endif
 }
 
 UF2LIB_API unsigned long long UF2LIB_CALL UF2_getDStreamProgress(const UF2_DStream * fds)
