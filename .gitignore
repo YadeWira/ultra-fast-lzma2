@@ -303,3 +303,12 @@ __pycache__/
 
 *.map
 *.d
+
+# built programs and libraries of this project
+/libuf-lzma2.a
+/libuf-lzma2.so*
+/libuf-lzma2.dll
+bench/bench
+bench/curve
+fuzzer/fuzzer
+test/file_test
