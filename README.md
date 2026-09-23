@@ -195,6 +195,20 @@ However, no warranty or fitness for a particular purpose is expressed or implied
 
 
 
+Changes in v1.2.0:
+
+- Standard .xz output and input for the one-shot functions: `UF2_p_format`, `UF2_p_xzCheck`
+  (CRC64 by default, CRC32 or none). Decompression recognises .xz by itself and also reads .xz
+  written by xz, including multi-block and concatenated files. See [Output formats](#output-formats).
+- Level 11, level 10 plus `UF2_p_propertySearch`, a per-input lc/lp/pb search that keeps the
+  smallest output. See [Level 11](#level-11).
+- `UF2_compressBound()` grows by up to 87 bytes so that one bound covers both formats.
+- Fixed: `UF2_estimateCStreamSize()` read past the level table for any level it should reject.
+- Fixed: `uf-lzma2.h` shared its include guard with `fast-lzma2.h`, so including both lost the second.
+- Fixed: the fuzzer divided by zero when run with its default thread count.
+- `bench/curve` measures the speed/ratio curve; `bench/lzbench/add_uflzma2.py` adds the library to
+  lzbench with its assembler decoder.
+
 Changes in v1.1.0:
 
 This release is Conor McCarthy's unreleased dev branch, which sat unpublished after v1.0.1. Every
