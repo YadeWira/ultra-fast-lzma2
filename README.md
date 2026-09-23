@@ -6,15 +6,35 @@ explicit about it: the great majority of this code is Conor McCarthy's work, dua
 [BSD](LICENSE) and [GPLv2](COPYING), and the LZMA2 codec it builds on is Igor Pavlov's, taken from the
 LZMA SDK. The upstream repository holds the full authorship record.
 
+The rule this fork keeps is that output stays standard LZMA2: everything it adds is on the encoder
+side, in the framing, or in how the library is built.
+
 Changes in this fork:
 
+- v1.1.0: fast-lzma2's dev branch, unreleased since 2019, landed with byte-identical output.
 - An ARM64 (aarch64) assembler LZMA decoder, ported from Igor Pavlov's `Asm/arm64/LzmaDecOpt.S` in
   LZMA SDK 26.03 and adapted to the `LZMA2_DCtx` layout. Previously only x86_64 had one. Upstream
   measures 20%-60% faster LZMA/LZMA2 decompression from this code on ARM64; that figure has not been
   reproduced here.
-- Static assertions on the `LZMA2_DCtx` field offsets that the assembler decoders hard-code.
 - Standard .xz output and input, so the library's files open in xz, 7-Zip and any other .xz decoder.
   See [Output formats](#output-formats).
+- `bench/curve`, a reproducible speed/ratio harness, and `bench/lzbench/add_uflzma2.py`, which adds this
+  library to lzbench with its assembler decoder. lzbench builds fast-lzma2 from its C files only.
+- Static assertions on the `LZMA2_DCtx` field offsets that the assembler decoders hard-code, a
+  division by zero fixed in the fuzzer, and a public header guard no longer shared with fast-lzma2.
+
+In the lz6 bakeoff (lzbench, one thread, Silesia per file, 2x Xeon E5-2697A v4), level 10 gives the
+smallest output of the table at the decode speed of xz:
+
+| codec | ratio | compress | decompress |
+|---|---:|---:|---:|
+| **uf-lzma2 L10** | **22.97%** | 3.3 MB/s | 110.5 MB/s |
+| xz L9 | 23.02% | 2.5 MB/s | 110.3 MB/s |
+| brotli L11 | 23.75% | 0.5 MB/s | 358.6 MB/s |
+| zstd L19 | 24.96% | 2.7 MB/s | 789.5 MB/s |
+
+The [wiki](https://github.com/YadeWira/ultra-fast-lzma2/wiki) has the full tables, how the formats
+work, how to build and measure, and what was measured along the way, including the ideas it ruled out.
 
 [fast-lzma2]: https://github.com/conor42/fast-lzma2
 
