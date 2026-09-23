@@ -12,8 +12,8 @@
 extern "C" {
 #endif
 
-#ifndef FAST_LZMA2_H
-#define FAST_LZMA2_H
+#ifndef UF_LZMA2_H
+#define UF_LZMA2_H
 
 /* ======   Dependency   ======*/
 #include <stddef.h>   /* size_t */
@@ -649,7 +649,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_estimateDCtxSize(unsigned nbThreads);
  *  Obtain dictSize by passing the property byte to UF2_getDictSizeFromProp. */
 UF2LIB_API size_t UF2LIB_CALL UF2_estimateDStreamSize(size_t dictSize, unsigned nbThreads); /*!<  obtain dictSize from UF2_getDictSizeFromProp() */
 
-#endif  /* FAST_LZMA2_H */
+#endif  /* UF_LZMA2_H */
 
 #if defined (__cplusplus)
 }
