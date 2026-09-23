@@ -69,6 +69,9 @@ line = next(l for l in s.split("\n") if l.lstrip().startswith('{ "fastlzma2",'))
 new = line.replace('"fastlzma2",  "fastlzma2 1.0.1",        ', '"uflzma2",    "uf-lzma2 1.1.0",         ') \
           .replace("lzbench_fastlzma2_compress,  lzbench_fastlzma2_decompress,  ",
                    "lzbench_uflzma2_compress,    lzbench_uflzma2_decompress,    ")
+# uf-lzma2 has one level more than fast-lzma2: its top level adds the lc/lp/pb search
+if " 1,  10, " not in new: sys.exit("FALLO lzbench.h: rango de niveles inesperado")
+new = new.replace(" 1,  10, ", " 1,  11, ", 1)
 if new == line or "uflzma2" not in new: sys.exit("FALLO lzbench.h: no pude derivar la fila")
 rep1("bench/lzbench.h", line + "\n", line + "\n" + new + "\n")
 

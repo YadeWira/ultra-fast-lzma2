@@ -46,6 +46,8 @@ typedef struct {
     BYTE omitProp;
     BYTE format;    /* UF2_format */
     BYTE xzCheck;   /* .xz check type */
+    BYTE propSearch;    /* UF2_p_propertySearch, as set by the caller */
+    BYTE levelSearch;   /* set by selecting the top level of a table */
 } UF2_CCtx_params;
 
 typedef struct {

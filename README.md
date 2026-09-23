@@ -18,6 +18,8 @@ Changes in this fork:
   reproduced here.
 - Standard .xz output and input, so the library's files open in xz, 7-Zip and any other .xz decoder.
   See [Output formats](#output-formats).
+- Level 11: level 10 plus a search over the literal/position settings (lc/lp/pb), keeping the smallest
+  output. See [Level 11](#level-11).
 - `bench/curve`, a reproducible speed/ratio harness, and `bench/lzbench/add_uflzma2.py`, which adds this
   library to lzbench with its assembler decoder. lzbench builds fast-lzma2 from its C files only.
 - Static assertions on the `LZMA2_DCtx` field offsets that the assembler decoders hard-code, a
@@ -73,6 +75,29 @@ left of the graph. This provides an optimal speed/ratio tradeoff.
 Compression data rate vs ratio
 ------------------------------
 ![Compression data rate vs ratio](doc/images/bench_mt2.png "Compression data rate vs ratio")
+
+## Level 11
+
+The top level of each table is the level below it plus `UF2_p_propertySearch`: one-shot compression
+tries three lc/lp/pb settings and keeps the smallest output. The candidates are the current setting,
+so the result is never larger than level 10, plus `4/0/1` and `1/2/2`. Those two were chosen from all
+60 legal combinations on Silesia, AIT and a varied 52-file corpus, then checked on 80 files not used
+to choose them. The output is standard LZMA2 either way: lc/lp/pb travel in the chunk headers.
+
+| level 10 → level 11 | size | decompression |
+|---|---:|---:|
+| Silesia | -0.39% (22.97% → 22.88%) | -1.4% |
+| AIT A-H | -2.16% (53.80% → 52.64%) | -0.5% |
+| 52 varied files | -0.28% | |
+| 80 held-out files | -1.06% | |
+
+Decompression measured best of seven in round-robin passes; a single pass showed -3.6% on Silesia, so
+the true cost is within a few percent at most. Compression is about three times slower: 1.10 MB/s
+against 3.23 MB/s on Silesia, one thread. Streaming compression ignores the search, so there level 11
+behaves as level 10.
+
+No single fixed setting can do this. `3/1/3`, the best one for Silesia, made 51 of the 52 varied files
+larger; the gains come from letting each file keep the setting that suits it.
 
 ## Output formats
 

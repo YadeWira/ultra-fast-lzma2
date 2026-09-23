@@ -128,7 +128,7 @@ UF2LIB_API size_t      UF2LIB_CALL UF2_compressBound(size_t srcSize); /*!< maxim
 UF2LIB_API unsigned    UF2LIB_CALL UF2_isError(size_t code);          /*!< tells if a `size_t` function result is an error code */
 UF2LIB_API unsigned    UF2LIB_CALL UF2_isTimedOut(size_t code);       /*!< tells if a `size_t` function result is the timeout code */
 UF2LIB_API const char* UF2LIB_CALL UF2_getErrorName(size_t code);     /*!< provides readable string from an error code */
-UF2LIB_API int         UF2LIB_CALL UF2_maxCLevel(void);               /*!< maximum compression level available */
+UF2LIB_API int         UF2LIB_CALL UF2_maxCLevel(void);               /*!< maximum compression level available; the top one adds UF2_p_propertySearch */
 UF2LIB_API int         UF2LIB_CALL UF2_maxHighCLevel(void);           /*!< maximum compression level available in high mode */
 
 
@@ -590,6 +590,15 @@ typedef enum {
     UF2_p_xzCheck,          /* Integrity check stored in .xz output, numbered as in the .xz specification:
                              * 0 = none, 1 = CRC32, 4 = CRC64 (default, as xz itself uses).
                              * SHA-256 (10) is not supported. */
+    UF2_p_propertySearch,   /* One-shot compression (UF2_compressCCtx, UF2_compressMt) tries a few
+                             * literal/position settings (lc/lp/pb) and keeps the smallest output.
+                             * The candidates are the current setting plus two chosen by measurement,
+                             * so the result is never larger than without the search. The output is
+                             * standard LZMA2 either way. Costs about 3x compression time and one
+                             * extra output-sized buffer; decompression is unaffected. Streaming
+                             * compression ignores it. 0 = off (default), 1 = on.
+                             * The top level of each table (UF2_maxCLevel(), UF2_maxHighCLevel()) is
+                             * the level below it with the search enabled. */
 #ifdef RMF_REFERENCE
     UF2_p_useReferenceMF    /* Use the reference matchfinder for development purposes. SLOW. */
 #endif
