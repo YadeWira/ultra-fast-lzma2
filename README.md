@@ -13,6 +13,8 @@ Changes in this fork:
   measures 20%-60% faster LZMA/LZMA2 decompression from this code on ARM64; that figure has not been
   reproduced here.
 - Static assertions on the `LZMA2_DCtx` field offsets that the assembler decoders hard-code.
+- Standard .xz output and input, so the library's files open in xz, 7-Zip and any other .xz decoder.
+  See [Output formats](#output-formats).
 
 [fast-lzma2]: https://github.com/conor42/fast-lzma2
 
@@ -51,6 +53,37 @@ left of the graph. This provides an optimal speed/ratio tradeoff.
 Compression data rate vs ratio
 ------------------------------
 ![Compression data rate vs ratio](doc/images/bench_mt2.png "Compression data rate vs ratio")
+
+## Output formats
+
+The one-shot functions can wrap the same LZMA2 data in either of two containers.
+
+- **native** (default): this library's own framing, unchanged from fast-lzma2 - a dictionary property
+  byte, the LZMA2 chunks and, by default, a 32-bit xxhash. The hash is flagged in the top bit of the
+  property byte, where a standard LZMA2 property can never set it, so a standard decoder rejects this
+  output unless it is written with `UF2_p_doXXHash` set to 0.
+- **xz**: with `UF2_CCtx_setParameter(cctx, UF2_p_format, UF2_format_xz)`, `UF2_compressCCtx()` and
+  `UF2_compressMt()` write a standard .xz file, protected by CRC64 by default, or CRC32 or no check
+  with `UF2_p_xzCheck`. The dictionary it declares is capped at the input size, so a small file does
+  not make its decoder reserve the whole dictionary of a high level.
+
+  The check is the one part of .xz that costs decompression speed. Measured on Silesia on x86_64
+  with the assembler decoder, against native output without a hash: no check 0.4% slower, CRC32
+  3.8%, CRC64 4.6% (the native xxhash is 2.1%). The CRCs are slicing-by-16; the byte-at-a-time
+  version they replaced cost 22%.
+
+To embed the stream in a container that stores the property byte itself, as 7-Zip does in .7z, set
+`UF2_p_omitProperties` and store `UF2_getCCtxDictProp()`. The output is then raw LZMA2 with no hash,
+readable by any LZMA2 decoder; this is how 7-Zip-zstd uses the library.
+
+Decompression detects .xz by its signature - 0xFD, its first byte, is never a valid native property
+byte - and reads it, including .xz written by xz itself: any number of blocks, concatenated streams,
+Stream Padding, and CRC32, CRC64 or no check. What it cannot decode it rejects with
+`parameter_unsupported` rather than decoding it wrongly: filter chains such as BCJ or delta, and
+SHA-256. `UF2_findDecompressedSize()` reads the size from the .xz index.
+
+Streaming compression and decompression support the native format only for now, and return
+`parameter_unsupported` for .xz.
 
 ## Build
 

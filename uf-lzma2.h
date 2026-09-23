@@ -579,10 +579,26 @@ typedef enum {
                              * after the stream terminator. The value will be checked on decompression.
                              * 0 = do not calculate; 1 = calculate (default) */
 #endif
+    UF2_p_format,           /* Container written by the one-shot compression functions
+                             * (UF2_compressCCtx, UF2_compressMt):
+                             * UF2_format_native (default) - this library's own framing: a property byte,
+                             *   the LZMA2 data and an optional xxhash. Other decoders cannot read it.
+                             * UF2_format_xz - a standard .xz file, readable by xz, 7-Zip and any other
+                             *   .xz decoder, protected by the check selected with UF2_p_xzCheck.
+                             * Streaming compression does not support UF2_format_xz yet and returns
+                             * parameter_unsupported. Decompression detects either format by itself. */
+    UF2_p_xzCheck,          /* Integrity check stored in .xz output, numbered as in the .xz specification:
+                             * 0 = none, 1 = CRC32, 4 = CRC64 (default, as xz itself uses).
+                             * SHA-256 (10) is not supported. */
 #ifdef RMF_REFERENCE
     UF2_p_useReferenceMF    /* Use the reference matchfinder for development purposes. SLOW. */
 #endif
 } UF2_cParameter;
+
+typedef enum {
+    UF2_format_native = 0,
+    UF2_format_xz = 1
+} UF2_format;
 
 
 /*! UF2_CCtx_setParameter() :

@@ -54,6 +54,9 @@
     <ClCompile Include="..\uf2_threading.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\uf2_xz.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\dict_buffer.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -117,6 +120,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\uf2_threading.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\uf2_xz.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\uf2_xz_tables.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\uf2_pool.h">

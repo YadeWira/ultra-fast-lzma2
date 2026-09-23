@@ -315,6 +315,7 @@
     <ClCompile Include="..\uf2_decompress.c" />
     <ClCompile Include="..\uf2_pool.c" />
     <ClCompile Include="..\uf2_threading.c" />
+    <ClCompile Include="..\uf2_xz.c" />
     <ClCompile Include="..\lzma2_dec.c" />
     <ClCompile Include="..\lzma2_enc.c" />
     <ClCompile Include="..\radix_bitpack.c" />
@@ -337,6 +338,8 @@
     <ClInclude Include="..\uf2_internal.h" />
     <ClInclude Include="..\uf2_pool.h" />
     <ClInclude Include="..\uf2_threading.h" />
+    <ClInclude Include="..\uf2_xz.h" />
+    <ClInclude Include="..\uf2_xz_tables.h" />
     <ClInclude Include="..\lzma2_dec.h" />
     <ClInclude Include="..\lzma2_enc.h" />
     <ClInclude Include="..\mem.h" />

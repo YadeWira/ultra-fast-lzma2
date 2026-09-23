@@ -16,6 +16,7 @@
 ***************************************/
 #include <stdlib.h>
 #include "uf-lzma2.h"
+#include "uf2_xz.h"
 #include "uf2_errors.h"
 #include "uf2_internal.h"
 #include "lzma2_enc.h"
@@ -107,7 +108,8 @@ UF2LIB_API size_t UF2LIB_CALL UF2_setLargeAllocator(void* (*allocFunction)(size_
 ******************************************/
 UF2LIB_API size_t UF2LIB_CALL UF2_compressBound(size_t srcSize)
 {
-	return LZMA2_compressBound(srcSize);
+	/* large enough for either format: .xz adds at most XZ_OVERHEAD_MAX bytes of framing */
+	return LZMA2_compressBound(srcSize) + XZ_OVERHEAD_MAX;
 }
 
 /*-****************************************

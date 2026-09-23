@@ -21,6 +21,7 @@
 #include "uf2_pool.h"
 #include "radix_mf.h"
 #include "lzma2_enc.h"
+#include "uf2_xz.h"
 
 #define UF2_MAX_LOOPS 10U
 
@@ -303,6 +304,8 @@ static UF2_CCtx *UF2_createCCtx_internal(unsigned nbThreads, int const dualBuffe
 
 #ifndef NO_XXHASH
     cctx->params.doXXH = 1;
+    cctx->params.format = UF2_format_native;
+    cctx->params.xzCheck = XZ_CHECK_CRC64;
 #endif
 
     cctx->matchTable = NULL;
@@ -644,7 +647,7 @@ static size_t UF2_compressBuffer(UF2_CCtx *const cctx,
     return dstBuf - (const BYTE*)dst;
 }
 
-UF2LIB_API size_t UF2LIB_CALL UF2_compressCCtx(UF2_CCtx *cctx,
+static size_t UF2_compressCCtxNative(UF2_CCtx *cctx,
     void* dst, size_t dstCapacity,
     const void* src, size_t srcSize,
     int compressionLevel)
@@ -695,6 +698,83 @@ UF2LIB_API size_t UF2LIB_CALL UF2_compressCCtx(UF2_CCtx *cctx,
     UF2_endFrame(cctx);
 
     return dstBuf - (BYTE*)dst;
+}
+
+/* A single-block .xz file around the library's own LZMA2 data. The encoder runs
+ * exactly as it does for the native format, with the property byte omitted; the
+ * dictionary property goes into the Block Header instead, and the check replaces
+ * the xxhash. See "The .xz File Format" 1.2.1. */
+static size_t UF2_compressCCtxXz(UF2_CCtx *cctx,
+    void* dst, size_t dstCapacity,
+    const void* src, size_t srcSize,
+    int compressionLevel)
+{
+    BYTE *const out = (BYTE*)dst;
+    unsigned const check = cctx->params.xzCheck;
+    size_t const checkSize = (size_t)XZ_checkSize(check);
+    /* room reserved before the LZMA2 data, and after it for padding, check, index and footer */
+    size_t const head = XZ_STREAM_HEADER_SIZE + XZ_BLOCK_HEADER_MAX;
+    size_t const tail = 3 + checkSize + XZ_INDEX_MAX_1 + XZ_STREAM_FOOTER_SIZE;
+    U64 unpadded = 0;
+    U64 const uncompressed = srcSize;
+    size_t records = 0;
+
+    if (dstCapacity < head + tail + 1)
+        return UF2_ERROR(dstSize_tooSmall);
+
+    XZ_writeStreamHeader(out, check);
+    size_t pos = XZ_STREAM_HEADER_SIZE;
+
+    /* An empty input is a stream with no blocks, which is what xz itself writes. */
+    if (srcSize > 0) {
+        BYTE const omitProp = cctx->params.omitProp;
+        cctx->params.omitProp = 1;
+        size_t const cSize = UF2_compressCCtxNative(cctx, out + head, dstCapacity - head - tail,
+            src, srcSize, compressionLevel);
+        cctx->params.omitProp = omitProp;
+        if (UF2_isError(cSize))
+            return cSize;
+
+        /* The header's size depends on the compressed size, so it is built after the
+         * data and the data is moved down to meet it. */
+        BYTE header[XZ_BLOCK_HEADER_MAX];
+        /* The dictionary actually used cannot exceed the input, so the property is
+         * reduced the same way the native format reduces its own (UF2_compressBuffer).
+         * Without this a 1-byte input at level 10 asks every decoder for 128 MiB. */
+        BYTE const dictProp = LZMA2_getDictSizeProp(MIN(srcSize, cctx->params.rParams.dictionary_size));
+        size_t const headerSize = XZ_writeBlockHeader(header, cSize, srcSize, dictProp);
+        memmove(out + pos + headerSize, out + head, cSize);
+        memcpy(out + pos, header, headerSize);
+        pos += headerSize + cSize;
+
+        size_t const padding = (4 - (cSize & 3)) & 3;
+        memset(out + pos, 0, padding);
+        pos += padding;
+
+        if (check == XZ_CHECK_CRC32)
+            MEM_writeLE32(out + pos, XZ_crc32(0, src, srcSize));
+        else if (check == XZ_CHECK_CRC64)
+            MEM_writeLE64(out + pos, XZ_crc64(0, src, srcSize));
+        pos += checkSize;
+
+        unpadded = headerSize + cSize + checkSize;
+        records = 1;
+    }
+
+    size_t const indexSize = XZ_writeIndex(out + pos, &unpadded, &uncompressed, records);
+    pos += indexSize;
+    XZ_writeStreamFooter(out + pos, indexSize, check);
+    return pos + XZ_STREAM_FOOTER_SIZE;
+}
+
+UF2LIB_API size_t UF2LIB_CALL UF2_compressCCtx(UF2_CCtx *cctx,
+    void* dst, size_t dstCapacity,
+    const void* src, size_t srcSize,
+    int compressionLevel)
+{
+    if (cctx->params.format == UF2_format_xz)
+        return UF2_compressCCtxXz(cctx, dst, dstCapacity, src, srcSize, compressionLevel);
+    return UF2_compressCCtxNative(cctx, dst, dstCapacity, src, srcSize, compressionLevel);
 }
 
 UF2LIB_API size_t UF2LIB_CALL UF2_compressMt(void* dst, size_t dstCapacity,
@@ -848,6 +928,18 @@ UF2LIB_API size_t UF2LIB_CALL UF2_CCtx_setParameter(UF2_CCtx *cctx, UF2_cParamet
     case UF2_p_omitProperties:
         cctx->params.omitProp = value != 0;
         break;
+
+    case UF2_p_format:
+        if (value != UF2_format_native && value != UF2_format_xz)
+            return UF2_ERROR(parameter_outOfBound);
+        cctx->params.format = (BYTE)value;
+        break;
+
+    case UF2_p_xzCheck:
+        if (value != XZ_CHECK_NONE && value != XZ_CHECK_CRC32 && value != XZ_CHECK_CRC64)
+            return UF2_ERROR(parameter_unsupported);
+        cctx->params.xzCheck = (BYTE)value;
+        break;
 #ifdef RMF_REFERENCE
     case UF2_p_useReferenceMF:
         cctx->params.rParams.use_ref_mf = value != 0;
@@ -921,6 +1013,12 @@ UF2LIB_API size_t UF2LIB_CALL UF2_CCtx_getParameter(UF2_CCtx *cctx, UF2_cParamet
 
     case UF2_p_omitProperties:
         return cctx->params.omitProp;
+
+    case UF2_p_format:
+        return cctx->params.format;
+
+    case UF2_p_xzCheck:
+        return cctx->params.xzCheck;
 #ifdef RMF_REFERENCE
     case UF2_p_useReferenceMF:
         return cctx->params.rParams.use_ref_mf;
@@ -957,6 +1055,9 @@ UF2LIB_API void UF2LIB_CALL UF2_freeCStream(UF2_CStream * fcs)
 UF2LIB_API size_t UF2LIB_CALL UF2_initCStream(UF2_CStream* fcs, int compressionLevel)
 {
     DEBUGLOG(4, "UF2_initCStream level %d", compressionLevel);
+
+    if (fcs->params.format != UF2_format_native)
+        return UF2_ERROR(parameter_unsupported);
 
     fcs->endMarked = 0;
     fcs->wroteProp = 0;

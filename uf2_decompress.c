@@ -11,6 +11,7 @@
 
 #include <string.h>
 #include "uf-lzma2.h"
+#include "uf2_xz.h"
 #include "uf2_errors.h"
 #include "uf2_internal.h"
 #include "mem.h"
@@ -27,8 +28,69 @@
 #define LZMA2_PROP_UNINITIALIZED 0xFF
 
 
+/* The uncompressed size of an .xz file is the sum of its Index records. It is
+ * read from the end, stream by stream, the way xz --list does it, so `src` must
+ * hold the whole file. Every structure consulted is CRC-checked. */
+static unsigned long long UF2_xzFindDecompressedSize(const BYTE *in, size_t size)
+{
+    unsigned long long total = 0;
+    size_t end = size;
+    while (end > 0) {
+        size_t pad = 0;
+        while (end > 0 && in[end - 1] == 0) {       /* Stream Padding */
+            --end;
+            ++pad;
+        }
+        if (pad & 3)
+            return UF2_CONTENTSIZE_ERROR;
+        if (end == 0)
+            break;
+        if (end < XZ_STREAM_HEADER_SIZE + XZ_STREAM_FOOTER_SIZE)
+            return UF2_CONTENTSIZE_ERROR;
+
+        const BYTE *const f = in + end - XZ_STREAM_FOOTER_SIZE;
+        if (f[10] != 'Y' || f[11] != 'Z' || MEM_readLE32(f) != XZ_crc32(0, f + 4, 6))
+            return UF2_CONTENTSIZE_ERROR;
+        size_t const indexSize = ((size_t)MEM_readLE32(f + 4) + 1) * 4;
+        if (indexSize > (size_t)(f - in) - XZ_STREAM_HEADER_SIZE)
+            return UF2_CONTENTSIZE_ERROR;
+        const BYTE *const idx = f - indexSize;
+        if (idx[0] != 0 || MEM_readLE32(idx + indexSize - 4) != XZ_crc32(0, idx, indexSize - 4))
+            return UF2_CONTENTSIZE_ERROR;
+
+        size_t q = 1, n;
+        size_t const limit = indexSize - 4;
+        U64 count, blocks = 0, uncompressed = 0;
+        if ((n = XZ_vliDecode(idx + q, limit - q, &count)) == 0)
+            return UF2_CONTENTSIZE_ERROR;
+        q += n;
+        for (U64 i = 0; i < count; ++i) {
+            U64 unpadded, usize;
+            if ((n = XZ_vliDecode(idx + q, limit - q, &unpadded)) == 0)
+                return UF2_CONTENTSIZE_ERROR;
+            q += n;
+            if ((n = XZ_vliDecode(idx + q, limit - q, &usize)) == 0)
+                return UF2_CONTENTSIZE_ERROR;
+            q += n;
+            blocks += (unpadded + 3) & ~(U64)3;
+            uncompressed += usize;
+        }
+        /* the blocks must fill the gap between the Stream Header and the Index exactly */
+        if (blocks > (U64)(idx - in) - XZ_STREAM_HEADER_SIZE)
+            return UF2_CONTENTSIZE_ERROR;
+        const BYTE *const h = idx - blocks - XZ_STREAM_HEADER_SIZE;
+        if (!XZ_isXz(h, XZ_STREAM_HEADER_SIZE) || h[6] != f[8] || h[7] != f[9])
+            return UF2_CONTENTSIZE_ERROR;
+        total += uncompressed;
+        end = (size_t)(h - in);
+    }
+    return total;
+}
+
 UF2LIB_API unsigned long long UF2LIB_CALL UF2_findDecompressedSize(const void *src, size_t srcSize)
 {
+    if (XZ_isXz(src, srcSize))
+        return UF2_xzFindDecompressedSize((const BYTE*)src, srcSize);
     return LZMA2_getUnpackSize(src, srcSize);
 }
 
@@ -312,6 +374,262 @@ UF2LIB_API size_t UF2LIB_CALL UF2_initDCtx(UF2_DCtx * dctx, unsigned char prop)
     return UF2_error_no_error;
 }
 
+/* Decode one raw LZMA2 stream: no property byte, no hash. Shared by the native
+ * format and by each block of an .xz file. On success returns the bytes written
+ * to dst and sets *srcConsumed to the bytes of src used, end marker included.
+ * dst doubles as the dictionary, so each call starts a fresh one; both LZMA2 in
+ * this library's framing and every .xz block begin with a dictionary reset. */
+static size_t UF2_decompressLzma2(UF2_DCtx* dctx, BYTE prop,
+    void* dst, size_t dstCapacity,
+    const BYTE* src, size_t srcSize, size_t* srcConsumed)
+{
+    size_t srcPos = srcSize;
+    size_t dicPos = 0;
+    size_t res;
+#ifndef UF2_SINGLETHREAD
+    if (dctx->blocks != NULL) {
+        dctx->lzma2prop = prop;
+        res = UF2_decompressDCtxMt(dctx, dst, dstCapacity, src, &srcPos);
+    }
+    else
+#endif
+    {
+        res = LZMA2_initDecoder(&dctx->dec, prop, dst, dstCapacity);
+        if (!UF2_isError(res)) {
+            dicPos = dctx->dec.dic_pos;
+            res = LZMA2_decodeToDic(&dctx->dec, dstCapacity, src, &srcPos, LZMA_FINISH_END);
+        }
+    }
+
+    /* reset on every path, errors included, so the context is clean for its next use */
+    dctx->lzma2prop = LZMA2_PROP_UNINITIALIZED;
+
+    if (UF2_isError(res))
+        return res;
+    /* All src data must be in memory */
+    if (res == LZMA_STATUS_NEEDS_MORE_INPUT)
+        return UF2_ERROR(srcSize_wrong);
+
+    *srcConsumed = srcPos;
+    return dctx->dec.dic_pos - dicPos;
+}
+
+/* ---------- .xz ---------- */
+
+typedef struct {
+    U64 unpadded;
+    U64 uncompressed;
+} XZ_record;
+
+/* Decode one .xz Stream starting at in[0]. Validates every CRC32 of the framing,
+ * the check of each block, and the Index against the blocks actually decoded,
+ * the way xz itself does. */
+static size_t UF2_decompressXzStream(UF2_DCtx* dctx,
+    BYTE* out, size_t outCapacity,
+    const BYTE* in, size_t inSize, size_t* inConsumed)
+{
+    if (inSize < XZ_STREAM_HEADER_SIZE + XZ_STREAM_FOOTER_SIZE)
+        return UF2_ERROR(srcSize_wrong);
+    if (!XZ_isXz(in, inSize))
+        return UF2_ERROR(corruption_detected);
+    if (MEM_readLE32(in + 8) != XZ_crc32(0, in + 6, 2))
+        return UF2_ERROR(corruption_detected);
+    if (in[6] != 0 || (in[7] & 0xF0))
+        return UF2_ERROR(parameter_unsupported);    /* reserved stream flags */
+
+    unsigned const check = in[7];
+    if (check != XZ_CHECK_NONE && check != XZ_CHECK_CRC32 && check != XZ_CHECK_CRC64)
+        return UF2_ERROR(parameter_unsupported);    /* SHA-256, or a type the spec reserves */
+    size_t const checkSize = (size_t)XZ_checkSize(check);
+
+    XZ_record *records = NULL;
+    size_t nRecords = 0, capRecords = 0;
+    size_t err = 0;
+    size_t p = XZ_STREAM_HEADER_SIZE;
+    size_t op = 0;
+
+#define XZ_FAIL(code) do { err = UF2_ERROR(code); goto fail; } while (0)
+
+    /* ---- blocks, until the Index Indicator ---- */
+    for (;;) {
+        if (p >= inSize)
+            XZ_FAIL(srcSize_wrong);
+        if (in[p] == 0x00)
+            break;
+
+        size_t const headerSize = ((size_t)in[p] + 1) * 4;
+        if (headerSize > inSize - p)
+            XZ_FAIL(srcSize_wrong);
+        size_t const headerEnd = p + headerSize - 4;
+        if (MEM_readLE32(in + headerEnd) != XZ_crc32(0, in + p, headerSize - 4))
+            XZ_FAIL(corruption_detected);
+
+        BYTE const flags = in[p + 1];
+        if (flags & 0x3C)
+            XZ_FAIL(parameter_unsupported);         /* reserved block flags */
+        if ((flags & 0x03) != 0)
+            XZ_FAIL(parameter_unsupported);         /* a filter chain: only a lone LZMA2 is supported */
+
+        size_t q = p + 2, n;
+        U64 cSizeField = 0, uSizeField = 0;
+        if (flags & 0x40) {
+            if ((n = XZ_vliDecode(in + q, headerEnd - q, &cSizeField)) == 0 || cSizeField == 0)
+                XZ_FAIL(corruption_detected);
+            q += n;
+        }
+        if (flags & 0x80) {
+            if ((n = XZ_vliDecode(in + q, headerEnd - q, &uSizeField)) == 0)
+                XZ_FAIL(corruption_detected);
+            q += n;
+        }
+        U64 filterId, propsSize;
+        if ((n = XZ_vliDecode(in + q, headerEnd - q, &filterId)) == 0)
+            XZ_FAIL(corruption_detected);
+        q += n;
+        if (filterId != XZ_LZMA2_FILTER_ID)
+            XZ_FAIL(parameter_unsupported);         /* BCJ, delta and the rest */
+        if ((n = XZ_vliDecode(in + q, headerEnd - q, &propsSize)) == 0 || propsSize != 1 || q + n >= headerEnd)
+            XZ_FAIL(corruption_detected);
+        q += n;
+        BYTE const prop = in[q++];
+        if (prop > 40)
+            XZ_FAIL(corruption_detected);
+        for (; q < headerEnd; ++q)
+            if (in[q] != 0)
+                XZ_FAIL(corruption_detected);       /* Header Padding must be zero */
+
+        size_t const d = p + headerSize;
+        size_t avail = inSize - d;
+        if (flags & 0x40) {
+            if (cSizeField > avail)
+                XZ_FAIL(srcSize_wrong);
+            avail = (size_t)cSizeField;
+        }
+        if ((flags & 0x80) && uSizeField > outCapacity - op)
+            XZ_FAIL(dstSize_tooSmall);
+
+        size_t used = 0;
+        size_t const dSize = UF2_decompressLzma2(dctx, prop, out + op, outCapacity - op, in + d, avail, &used);
+        if (UF2_isError(dSize)) {
+            err = dSize;
+            goto fail;
+        }
+        if ((flags & 0x40) && used != cSizeField)
+            XZ_FAIL(corruption_detected);
+        if ((flags & 0x80) && dSize != uSizeField)
+            XZ_FAIL(corruption_detected);
+
+        size_t e = d + used;
+        size_t const padding = (4 - (used & 3)) & 3;
+        if (padding + checkSize > inSize - e)
+            XZ_FAIL(srcSize_wrong);
+        for (size_t k = 0; k < padding; ++k)
+            if (in[e + k] != 0)
+                XZ_FAIL(corruption_detected);       /* Block Padding must be zero */
+        e += padding;
+
+        if (check == XZ_CHECK_CRC32) {
+            if (MEM_readLE32(in + e) != XZ_crc32(0, out + op, dSize))
+                XZ_FAIL(checksum_wrong);
+        }
+        else if (check == XZ_CHECK_CRC64) {
+            if (MEM_readLE64(in + e) != XZ_crc64(0, out + op, dSize))
+                XZ_FAIL(checksum_wrong);
+        }
+
+        if (nRecords == capRecords) {
+            size_t const newCap = capRecords ? capRecords * 2 : 16;
+            XZ_record *const r = realloc(records, newCap * sizeof(XZ_record));
+            if (r == NULL)
+                XZ_FAIL(memory_allocation);
+            records = r;
+            capRecords = newCap;
+        }
+        records[nRecords].unpadded = headerSize + used + checkSize;
+        records[nRecords].uncompressed = dSize;
+        ++nRecords;
+
+        op += dSize;
+        p = e + checkSize;
+    }
+
+    /* ---- Index: it must describe exactly the blocks just decoded ---- */
+    {
+        size_t const indexStart = p;
+        size_t q = p + 1, n;
+        U64 count;
+        if ((n = XZ_vliDecode(in + q, inSize - q, &count)) == 0 || count != nRecords)
+            XZ_FAIL(corruption_detected);
+        q += n;
+        for (size_t i = 0; i < nRecords; ++i) {
+            U64 unpadded, uncompressed;
+            if ((n = XZ_vliDecode(in + q, inSize - q, &unpadded)) == 0 || unpadded != records[i].unpadded)
+                XZ_FAIL(corruption_detected);
+            q += n;
+            if ((n = XZ_vliDecode(in + q, inSize - q, &uncompressed)) == 0 || uncompressed != records[i].uncompressed)
+                XZ_FAIL(corruption_detected);
+            q += n;
+        }
+        while ((q - indexStart) & 3) {
+            if (q >= inSize || in[q] != 0)
+                XZ_FAIL(corruption_detected);       /* Index Padding must be zero */
+            ++q;
+        }
+        if (inSize - q < 4 + XZ_STREAM_FOOTER_SIZE)
+            XZ_FAIL(srcSize_wrong);
+        if (MEM_readLE32(in + q) != XZ_crc32(0, in + indexStart, q - indexStart))
+            XZ_FAIL(corruption_detected);
+        size_t const indexSize = q + 4 - indexStart;
+
+        /* ---- Stream Footer ---- */
+        const BYTE *const f = in + q + 4;
+        if (MEM_readLE32(f) != XZ_crc32(0, f + 4, 6)
+            || ((size_t)MEM_readLE32(f + 4) + 1) * 4 != indexSize
+            || f[8] != in[6] || f[9] != in[7]
+            || f[10] != 'Y' || f[11] != 'Z')
+            XZ_FAIL(corruption_detected);
+
+        *inConsumed = (size_t)(f + XZ_STREAM_FOOTER_SIZE - in);
+    }
+    free(records);
+    return op;
+
+fail:
+    free(records);
+    return err;
+#undef XZ_FAIL
+}
+
+/* One or more .xz Streams, as xz reads them: concatenated, optionally separated
+ * by Stream Padding (zero bytes in multiples of four). Anything else trailing is
+ * an error, never silently ignored. */
+static size_t UF2_decompressXz(UF2_DCtx* dctx,
+    void* dst, size_t dstCapacity,
+    const void* src, size_t srcSize)
+{
+    const BYTE *const in = (const BYTE*)src;
+    BYTE *const out = (BYTE*)dst;
+    size_t ip = 0, op = 0;
+    for (;;) {
+        size_t used = 0;
+        size_t const r = UF2_decompressXzStream(dctx, out + op, dstCapacity - op, in + ip, srcSize - ip, &used);
+        if (UF2_isError(r))
+            return r;
+        op += r;
+        ip += used;
+        size_t pad = 0;
+        while (ip + pad < srcSize && in[ip + pad] == 0)
+            ++pad;
+        if (pad & 3)
+            return UF2_ERROR(corruption_detected);
+        ip += pad;
+        if (ip == srcSize)
+            return op;
+        if (!XZ_isXz(in + ip, srcSize - ip))
+            return UF2_ERROR(corruption_detected);
+    }
+}
+
 UF2LIB_API size_t UF2LIB_CALL UF2_decompressDCtx(UF2_DCtx* dctx,
     void* dst, size_t dstCapacity,
     const void* src, size_t srcSize)
@@ -320,6 +638,12 @@ UF2LIB_API size_t UF2LIB_CALL UF2_decompressDCtx(UF2_DCtx* dctx,
     const BYTE *srcBuf = src;
 
     if (prop == LZMA2_PROP_UNINITIALIZED) {
+        /* 0xFD opens every .xz file and can never be a native property byte, so the
+         * format is recognised without any ambiguity. */
+        if (XZ_isXz(src, srcSize))
+            return UF2_decompressXz(dctx, dst, dstCapacity, src, srcSize);
+        if (srcSize == 0)
+            return UF2_ERROR(srcSize_wrong);
         prop = *(const BYTE*)src;
         ++srcBuf;
         --srcSize;
@@ -332,34 +656,10 @@ UF2LIB_API size_t UF2LIB_CALL UF2_decompressDCtx(UF2_DCtx* dctx,
 
     DEBUGLOG(4, "UF2_decompressDCtx : dict prop 0x%X, do hash %u", prop, doHash);
 
-    size_t srcPos = srcSize;
-
-    size_t dicPos = 0;
-    size_t res;
-#ifndef UF2_SINGLETHREAD
-    if (dctx->blocks != NULL) {
-        dctx->lzma2prop = prop;
-        res = UF2_decompressDCtxMt(dctx, dst, dstCapacity, srcBuf, &srcPos);
-    }
-    else
-#endif
-    {
-        CHECK_F(LZMA2_initDecoder(&dctx->dec, prop, dst, dstCapacity));
-
-        dicPos = dctx->dec.dic_pos;
-
-        res = LZMA2_decodeToDic(&dctx->dec, dstCapacity, srcBuf, &srcPos, LZMA_FINISH_END);
-    }
-
-    dctx->lzma2prop = LZMA2_PROP_UNINITIALIZED;
-
-    if (UF2_isError(res))
-        return res;
-    /* All src data must be in memory */
-    if (res == LZMA_STATUS_NEEDS_MORE_INPUT)
-        return UF2_ERROR(srcSize_wrong);
-
-    dicPos = dctx->dec.dic_pos - dicPos;
+    size_t srcPos = 0;
+    size_t const dicPos = UF2_decompressLzma2(dctx, prop, dst, dstCapacity, srcBuf, srcSize, &srcPos);
+    if (UF2_isError(dicPos))
+        return dicPos;
 
 #ifndef NO_XXHASH
     if (doHash) {
@@ -1239,6 +1539,9 @@ static size_t UF2_decompressStream_blocking(UF2_DStream* fds, UF2_outBuffer* out
         ) {
         if (fds->stage == UF2DEC_STAGE_INIT) {
             BYTE prop = ((const BYTE*)input->src)[input->pos];
+            /* .xz is decoded by the one-shot functions only, for now */
+            if (prop == XZ_magic[0])
+                return UF2_ERROR(parameter_unsupported);
             ++input->pos;
             UF2_initDStream_prop(fds, prop);
             fds->stage = UF2DEC_STAGE_DECOMP;

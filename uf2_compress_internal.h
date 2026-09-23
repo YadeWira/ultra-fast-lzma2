@@ -44,6 +44,8 @@ typedef struct {
     BYTE doXXH;
 #endif
     BYTE omitProp;
+    BYTE format;    /* UF2_format */
+    BYTE xzCheck;   /* .xz check type */
 } UF2_CCtx_params;
 
 typedef struct {
