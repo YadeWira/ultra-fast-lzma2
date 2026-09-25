@@ -3,6 +3,9 @@
 
     python3 bench/plot_curve.py out.png "title" label1=run1.tsv label2=run2.tsv ...
 
+Append ":dashed" to a series (label=run.tsv:dashed) to draw it with a dashed line
+and hollow markers, so that it stays visible where it overlaps another.
+
 Each TSV is what bench/curve (or a tool writing the same columns) prints: one row
 per level with at least the columns mode, level, ratio (compressed/original) and
 c_MBps. The x axis is compression speed on a log scale, fastest on the left, as
@@ -40,14 +43,21 @@ def main():
     fig, ax = plt.subplots(figsize=(9.2, 5.8), dpi=100)
     for i, spec in enumerate(series):
         label, path = spec.split("=", 1)
+        dashed = path.endswith(":dashed")
+        if dashed:
+            path = path[:-len(":dashed")]
         rows = read_tsv(path)
         x = [float(r["c_MBps"]) for r in rows]
         y = [1.0 / float(r["ratio"]) for r in rows]
         color = colors[i % len(colors)]
-        ax.plot(x, y, "-o", color=color, label=label, linewidth=2, markersize=5)
-        for r, xi, yi in zip(rows, x, y):
-            ax.annotate(r["level"], (xi, yi), textcoords="offset points", xytext=(4, 5),
-                        fontsize=8, color=color)
+        if dashed:
+            ax.plot(x, y, "--o", color=color, label=label, linewidth=1.5, markersize=7,
+                    markerfacecolor="none", zorder=3)
+        else:
+            ax.plot(x, y, "-o", color=color, label=label, linewidth=2, markersize=5, zorder=2)
+            for r, xi, yi in zip(rows, x, y):
+                ax.annotate(r["level"], (xi, yi), textcoords="offset points", xytext=(4, 5),
+                            fontsize=8, color=color)
 
     ax.set_xscale("log")
     ax.invert_xaxis()

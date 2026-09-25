@@ -43,7 +43,12 @@ smallest output of the table at the decode speed of xz. More in [Benchmarks](htt
 
 Silesia as one solid stream, the way an archiver compresses it, on two compression threads, best of
 three, 2x Xeon E5-2697A v4. The other line is the LZMA2 encoder of LZMA SDK 26.03, which is 7-Zip's,
-with its two threads split as 7-Zip's `-mmt2` splits them. Top left is better.
+with its two threads split as 7-Zip's `-mmt2` splits them; the dashed line is fast-lzma2 1.0.1, the
+library this fork started from. Top left is better.
+
+uf-lzma2 and fast-lzma2 write the same bytes at every level from 1 to 10, so their lines share every
+ratio; the speeds differ by up to 11% either way from level to level, which is measurement noise, not
+a change in the encoder. This fork's gains are in decompression and in level 11, not on this graph.
 
 The SDK wins the fastest levels with its hash-chain match finders. Past them, uf-lzma2 gives more ratio
 at every speed: SDK level 5 (23.39%) runs at 4.6 MB/s and uf-lzma2 level 7 (23.35%) at 8.2 MB/s; SDK
