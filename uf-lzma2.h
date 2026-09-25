@@ -54,7 +54,7 @@ Introduction
 
 /*------   Version   ------*/
 #define UF2_VERSION_MAJOR    1
-#define UF2_VERSION_MINOR    3
+#define UF2_VERSION_MINOR    4
 #define UF2_VERSION_RELEASE  0
 
 #define UF2_VERSION_NUMBER  (UF2_VERSION_MAJOR *100*100 + UF2_VERSION_MINOR *100 + UF2_VERSION_RELEASE)

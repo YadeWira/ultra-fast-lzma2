@@ -222,7 +222,7 @@ However, no warranty or fitness for a particular purpose is expressed or implied
 
 
 
-Changes since v1.3.0:
+Changes in v1.4.0:
 
 - Streaming .xz: `UF2_CStream` writes .xz with `UF2_p_format`, through `UF2_compressStream()`, the
   zero-copy dictionary functions and with a timeout alike; `UF2_DStream` reads .xz, including
