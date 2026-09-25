@@ -1,0 +1,50 @@
+name: Check
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x86_64
+            make: make check
+            packages: xz-utils
+          - name: x86_64 ASan+UBSan
+            make: >-
+              make check
+              CFLAGS="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -pthread -fPIC"
+            packages: xz-utils
+          - name: x86 32-bit
+            make: make check CC="gcc -m32" CFLAGS="-Wall -O2 -pthread -fPIC -m32" x86_64=0
+            packages: xz-utils gcc-multilib
+          - name: single-threaded, no xxhash
+            make: make check CFLAGS="-Wall -O2 -pthread -fPIC -DUF2_SINGLETHREAD -DNO_XXHASH"
+            packages: xz-utils
+          - name: arm64 (qemu)
+            make: >-
+              make check CC=aarch64-linux-gnu-gcc x86_64=0 arm64=1
+              RUN="qemu-aarch64 -L /usr/aarch64-linux-gnu"
+            packages: xz-utils gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+
+      - name: Build and check
+        run: ${{ matrix.make }}

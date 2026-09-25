@@ -62,6 +62,7 @@ files compressed one by one. The data are in `bench/data`, and `bench/plot_curve
 
     make            # libuf-lzma2.so.1.0 and libuf-lzma2.a
     make test       # builds the file compression tester and runs it on a test file
+    make check      # make test, plus the .xz and streaming tests (about 30 s)
     make install
 
 On x86_64 and ARM64 the build substitutes the assembler LZMA decoder for the C one; `x86_64=0 arm64=0`

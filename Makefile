@@ -17,6 +17,9 @@ STATIC_LIBNAME=libuf-lzma2.a
 x86_64:=0
 arm64:=0
 
+# runs the test programs through a wrapper, for example RUN=qemu-aarch64 after a cross build
+RUN:=
+
 ifeq ($(OS),Windows_NT)
 	CFLAGS+=-DUF2_DLL_EXPORT=1
 	LINKER_NAME=libuf-lzma2.dll
@@ -101,10 +104,29 @@ endif
 .PHONY: test
 test:libuf-lzma2
 	$(MAKE) -C ./test file_test
-	test/file_test radix_engine.h
+	$(RUN) test/file_test radix_engine.h
 	@echo "File compression/decompression test completed."
+
+# The .xz reader and writer, one-shot and streaming, against files written by
+# xz and 7-Zip (test/xz) and against the library's own output; then xz itself
+# tests some of that output, if it is installed.
+XZ_OUT:=test/xz_out
+
+.PHONY: check
+check: test
+	$(CC) $(CFLAGS) -I. -o test/xz_check test/xz_check.c $(STATIC_LIBNAME) -pthread
+	$(RM) $(XZ_OUT) && mkdir -p $(XZ_OUT)
+	$(RUN) test/xz_check test/xz $(XZ_OUT)
+	@if command -v xz >/dev/null 2>&1; then \
+		for f in $(XZ_OUT)/*.xz; do xz -t "$$f" || exit 1; done; \
+		echo "xz accepts every .xz file written."; \
+	else \
+		echo "xz is not installed: the output was not tested with xz."; \
+	fi
+	@echo "All checks passed."
 
 .PHONY: clean
 clean:
 	$(RM) $(REAL_NAME) $(STATIC_LIBNAME) $(OBJ) $(DEP)
+	$(RM) test/xz_check $(XZ_OUT)
 	$(MAKE) -C ./test clean

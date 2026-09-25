@@ -99,7 +99,7 @@ jobs:
           rm -rf dist
           rm -f *.o *.d libuf-lzma2.so.1.0 libuf-lzma2.a
 
-          SOURCES="dict_buffer.c uf2_common.c uf2_compress.c uf2_decompress.c uf2_pool.c uf2_threading.c lzma2_dec.c lzma2_enc.c radix_bitpack.c radix_mf.c radix_struct.c range_enc.c util.c xxhash.c"
+          SOURCES="dict_buffer.c uf2_common.c uf2_compress.c uf2_decompress.c uf2_pool.c uf2_threading.c uf2_xz.c lzma2_dec.c lzma2_enc.c radix_bitpack.c radix_mf.c radix_struct.c range_enc.c util.c xxhash.c"
 
           zig cc \
             -target ${{ matrix.target }} \
