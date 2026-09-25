@@ -62,7 +62,9 @@ size_t XZ_vliEncode(U64 value, BYTE *out);
 size_t XZ_vliDecode(const BYTE *in, size_t size, U64 *value);
 
 void XZ_writeStreamHeader(BYTE *out, unsigned check);
-/* returns the Block Header size written, always a multiple of 4 */
+/* Returns the Block Header size written, always a multiple of 4. A size of
+ * XZ_SIZE_UNKNOWN is left out of the header, as the specification allows. */
+#define XZ_SIZE_UNKNOWN ((U64)-1)
 size_t XZ_writeBlockHeader(BYTE *out, U64 compressedSize, U64 uncompressedSize, BYTE dictProp);
 /* returns the index size written, a multiple of 4; `count` records */
 size_t XZ_writeIndex(BYTE *out, const U64 *unpaddedSizes, const U64 *uncompressedSizes, size_t count);

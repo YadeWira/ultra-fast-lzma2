@@ -58,6 +58,30 @@ typedef struct {
     size_t cSize;
 } UF2_job;
 
+/* Framing bytes of a streamed .xz file, waiting to be written */
+typedef struct {
+    BYTE *data;
+    size_t cap;
+    size_t len;
+    size_t pos;
+} UF2_xzOut;
+
+/* State of a streamed .xz file */
+typedef struct {
+    UF2_xzOut head;     /* written before the pending compressed slices */
+    UF2_xzOut tail;     /* written after them: the end of the file */
+    U64 *unpadded;      /* index records */
+    U64 *uncompressed;
+    size_t records;
+    size_t recordCap;
+    U64 check;          /* running CRC of the open block's input */
+    U64 uSize;          /* input of the open block */
+    U64 cSize;          /* LZMA2 data of the open block, as far as accounted */
+    size_t headerSize;  /* Block Header of the open block */
+    BYTE open;          /* a block is open */
+    BYTE unaccounted;   /* the last compression's slices are not in cSize yet */
+} UF2_xzStream;
+
 struct UF2_CCtx_s {
     DICT_buffer buf;
     UF2_CCtx_params params;
@@ -84,6 +108,7 @@ struct UF2_CCtx_s {
     BYTE endMarked;
     BYTE loopCount;
     BYTE lockParams;
+    UF2_xzStream xz;
     unsigned jobCount;
     UF2_job jobs[1];
 };

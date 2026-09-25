@@ -149,8 +149,13 @@ Stream Padding, and CRC32, CRC64 or no check. What it cannot decode it rejects w
 `parameter_unsupported` rather than decoding it wrongly: filter chains such as BCJ or delta, and
 SHA-256. `UF2_findDecompressedSize()` reads the size from the .xz index.
 
-Streaming compression and decompression support the native format only for now, and return
-`parameter_unsupported` for .xz.
+Streaming compression and decompression handle .xz too. A streamed .xz file starts a block at each
+dictionary reset, like the one-shot default, but the encoder writes each Block Header before the
+block's data, when neither size is known, so it leaves them out, as xz does when it compresses on
+one thread. Such a file decompresses on one thread only; for parallel decompression, compress in one
+shot. The streaming decoder reads any .xz the one-shot decoder reads, verifies the same things, and
+decodes on one thread. It returns 0 at the end of each Stream and accepts Stream Padding or another
+Stream after it, so a concatenated file decodes however its input is split.
 
 ## Build
 
@@ -216,6 +221,15 @@ earlier version was released in the 7-Zip forks linked above. The library is con
 However, no warranty or fitness for a particular purpose is expressed or implied.
 
 
+
+Changes since v1.3.0:
+
+- Streaming .xz: `UF2_CStream` writes .xz with `UF2_p_format`, through `UF2_compressStream()`, the
+  zero-copy dictionary functions and with a timeout alike; `UF2_DStream` reads .xz, including
+  concatenated Streams. See [Output formats](#output-formats).
+- Fixed: `UF2_decompressStream()` crashed on a native stream whose property byte had the hash flag
+  set and an invalid dictionary size (`FF 00` is enough): the failed init left the hash flag set with
+  no hash state. Inherited from fast-lzma2.
 
 Changes in v1.3.0:
 

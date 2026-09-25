@@ -123,10 +123,16 @@ void XZ_writeStreamHeader(BYTE *out, unsigned check)
 size_t XZ_writeBlockHeader(BYTE *out, U64 compressedSize, U64 uncompressedSize, BYTE dictProp)
 {
     size_t n = 2;
-    /* one filter; Compressed Size and Uncompressed Size both present */
-    out[1] = 0x00 | 0x40 | 0x80;
-    n += XZ_vliEncode(compressedSize, out + n);
-    n += XZ_vliEncode(uncompressedSize, out + n);
+    /* one filter; each size present unless unknown */
+    out[1] = 0x00;
+    if (compressedSize != XZ_SIZE_UNKNOWN) {
+        out[1] |= 0x40;
+        n += XZ_vliEncode(compressedSize, out + n);
+    }
+    if (uncompressedSize != XZ_SIZE_UNKNOWN) {
+        out[1] |= 0x80;
+        n += XZ_vliEncode(uncompressedSize, out + n);
+    }
     out[n++] = XZ_LZMA2_FILTER_ID;
     out[n++] = 1;           /* size of the filter properties */
     out[n++] = dictProp;

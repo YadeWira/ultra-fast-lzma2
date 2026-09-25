@@ -913,8 +913,60 @@ typedef enum
     UF2DEC_STAGE_MT_WRITE,
 #endif
     UF2DEC_STAGE_HASH,
+    UF2DEC_STAGE_XZ,        /* .xz framing */
     UF2DEC_STAGE_FINISHED
 } UF2_decStage;
+
+typedef enum
+{
+    XZD_STREAM_HEADER,
+    XZD_BLOCK_START,
+    XZD_BLOCK_HEADER,
+    XZD_DATA,
+    XZD_PADDING,
+    XZD_CHECK,
+    XZD_INDEX,
+    XZD_INDEX_PADDING,
+    XZD_INDEX_CRC,
+    XZD_FOOTER,
+    XZD_BETWEEN             /* after a Stream Footer: Stream Padding, another Stream, or the end */
+} XZ_decState;
+
+/* Blocks summarised for comparison with the Index, without storing them: their
+ * count, the sums of both sizes, and a CRC32 of the size pairs in order. The
+ * same summary is built from the Index as it is read. */
+typedef struct
+{
+    U64 count;
+    U64 unpadded;
+    U64 uncompressed;
+    U32 crc;
+} XZ_summary;
+
+typedef struct
+{
+    XZ_decState state;
+    BYTE buf[1024];         /* a header, check or footer being collected; 1024 is the largest Block Header */
+    size_t have;
+    size_t need;
+    BYTE streamFlags[2];
+    unsigned check;
+    size_t checkSize;
+    XZ_blockHeader h;
+    U64 blockCheck;         /* running check of the block's output */
+    U64 uSize;              /* block output so far */
+    U64 cSize;              /* block LZMA2 data so far */
+    XZ_summary blocks;
+    XZ_summary index;
+    U64 indexCount;         /* records the Index declares */
+    U64 indexSize;
+    U32 indexCrc;
+    U64 vli;
+    unsigned vliBytes;
+    unsigned field;         /* 0 = record count, 1 = Unpadded Size, 2 = Uncompressed Size */
+    U64 unpadded;           /* the record being read */
+    size_t streamPadding;
+} XZ_dec;
 
 #ifndef UF2_SINGLETHREAD
 
@@ -991,6 +1043,8 @@ struct UF2_DStream_s
     size_t xxhPos;
 #endif
     UF2_decStage stage;
+    XZ_dec *xz;             /* allocated at the first .xz input */
+    BYTE isXz;
     BYTE doHash;
     BYTE loopCount;
     BYTE wait;
@@ -1057,6 +1111,276 @@ static size_t UF2_decompressOverlappedInput(UF2_DStream* fds, UF2_outBuffer* out
         fds->overlapSize += toRead;
     }
     return UF2_error_no_error;
+}
+
+
+/* ---------- streamed .xz ---------- */
+
+static void XZ_summaryAdd(XZ_summary *const sum, U64 const unpadded, U64 const uncompressed)
+{
+    BYTE pair[16];
+    MEM_writeLE64(pair, unpadded);
+    MEM_writeLE64(pair + 8, uncompressed);
+    sum->crc = XZ_crc32(sum->crc, pair, sizeof(pair));
+    sum->unpadded += unpadded;
+    sum->uncompressed += uncompressed;
+    ++sum->count;
+}
+
+/* The next framing byte: first any the LZMA2 stage buffered past its end
+ * marker, then the input. -1 if there is none yet. */
+static int UF2_xzNextByte(UF2_DStream* const fds, UF2_inBuffer* const input)
+{
+    if (fds->overlapSize != 0) {
+        BYTE const b = fds->overlap[0];
+        --fds->overlapSize;
+        memmove(fds->overlap, fds->overlap + 1, fds->overlapSize);
+        return b;
+    }
+    if (input->pos < input->size)
+        return ((const BYTE*)input->src)[input->pos++];
+    return -1;
+}
+
+/* Collect framing bytes until xz->need are held. Returns 0 if more input is needed. */
+static int UF2_xzCollect(UF2_DStream* const fds, UF2_inBuffer* const input)
+{
+    XZ_dec *const xz = fds->xz;
+    while (xz->have < xz->need) {
+        int const b = UF2_xzNextByte(fds, input);
+        if (b < 0)
+            return 0;
+        xz->buf[xz->have++] = (BYTE)b;
+    }
+    return 1;
+}
+
+static void UF2_xzStartStream(XZ_dec *const xz)
+{
+    memset(xz, 0, sizeof(*xz));
+    xz->state = XZD_STREAM_HEADER;
+    xz->need = XZ_STREAM_HEADER_SIZE;
+}
+
+/* Decode as much .xz as input and output allow. Every CRC of the framing, the
+ * check of each block and the Index are verified, as in the one-shot decoder. */
+static size_t UF2_decompressXzInput(UF2_DStream* const fds, UF2_outBuffer* const output, UF2_inBuffer* const input)
+{
+    XZ_dec *const xz = fds->xz;
+    for (;;) {
+        switch (xz->state) {
+        case XZD_STREAM_HEADER:
+            if (!UF2_xzCollect(fds, input))
+                return 0;
+            if (!XZ_isXz(xz->buf, XZ_STREAM_HEADER_SIZE) || MEM_readLE32(xz->buf + 8) != XZ_crc32(0, xz->buf + 6, 2))
+                return UF2_ERROR(corruption_detected);
+            if (xz->buf[6] != 0 || (xz->buf[7] & 0xF0))
+                return UF2_ERROR(parameter_unsupported);    /* reserved stream flags */
+            xz->check = xz->buf[7];
+            if (xz->check != XZ_CHECK_NONE && xz->check != XZ_CHECK_CRC32 && xz->check != XZ_CHECK_CRC64)
+                return UF2_ERROR(parameter_unsupported);    /* SHA-256, or a type the spec reserves */
+            xz->checkSize = (size_t)XZ_checkSize(xz->check);
+            xz->streamFlags[0] = xz->buf[6];
+            xz->streamFlags[1] = xz->buf[7];
+            xz->state = XZD_BLOCK_START;
+            break;
+
+        case XZD_BLOCK_START: {
+            int const b = UF2_xzNextByte(fds, input);
+            if (b < 0)
+                return 0;
+            xz->buf[0] = (BYTE)b;
+            xz->have = 1;
+            if (b == 0) {
+                /* Index Indicator */
+                xz->indexCrc = XZ_crc32(0, xz->buf, 1);
+                xz->indexSize = 1;
+                xz->field = 0;
+                xz->vli = 0;
+                xz->vliBytes = 0;
+                xz->state = XZD_INDEX;
+            }
+            else {
+                xz->need = ((size_t)b + 1) * 4;
+                xz->state = XZD_BLOCK_HEADER;
+            }
+            break;
+        }
+        case XZD_BLOCK_HEADER:
+            if (!UF2_xzCollect(fds, input))
+                return 0;
+            CHECK_F(XZ_parseBlockHeader(xz->buf, xz->need, &xz->h));
+            CHECK_F(LZMA2_initDecoder(&fds->dec, xz->h.prop, NULL, 0));
+            xz->blockCheck = 0;
+            xz->uSize = 0;
+            xz->cSize = 0;
+            fds->stage = UF2DEC_STAGE_DECOMP;
+            xz->state = XZD_DATA;
+            break;
+
+        case XZD_DATA: {
+            size_t const inBefore = input->pos;
+            size_t const overlapBefore = fds->overlapSize;
+            size_t const outBefore = output->pos;
+            CHECK_F(UF2_decompressOverlappedInput(fds, output, input));
+
+            const BYTE *const out = (const BYTE*)output->dst + outBefore;
+            size_t const produced = output->pos - outBefore;
+            if (xz->check == XZ_CHECK_CRC32)
+                xz->blockCheck = XZ_crc32((U32)xz->blockCheck, out, produced);
+            else if (xz->check == XZ_CHECK_CRC64)
+                xz->blockCheck = XZ_crc64(xz->blockCheck, out, produced);
+            xz->uSize += produced;
+            /* input moved into the overlap buffer is not consumed until decoded */
+            xz->cSize += (input->pos - inBefore) + overlapBefore - fds->overlapSize;
+
+            /* stop as soon as the block runs past a size its header states */
+            if (((xz->h.flags & XZ_HAS_USIZE) && xz->uSize > xz->h.uSize)
+                || ((xz->h.flags & XZ_HAS_CSIZE) && xz->cSize > xz->h.cSize))
+                return UF2_ERROR(corruption_detected);
+            if (fds->stage == UF2DEC_STAGE_DECOMP)
+                return 0;       /* the end marker is not reached yet */
+
+            fds->stage = UF2DEC_STAGE_XZ;
+            if (((xz->h.flags & XZ_HAS_USIZE) && xz->uSize != xz->h.uSize)
+                || ((xz->h.flags & XZ_HAS_CSIZE) && xz->cSize != xz->h.cSize))
+                return UF2_ERROR(corruption_detected);
+            xz->have = 0;
+            xz->need = (size_t)((4 - (xz->cSize & 3)) & 3);
+            xz->state = XZD_PADDING;
+            break;
+        }
+        case XZD_PADDING:
+            if (!UF2_xzCollect(fds, input))
+                return 0;
+            for (size_t k = 0; k < xz->need; ++k)
+                if (xz->buf[k] != 0)
+                    return UF2_ERROR(corruption_detected);  /* Block Padding must be zero */
+            xz->have = 0;
+            xz->need = xz->checkSize;
+            xz->state = XZD_CHECK;
+            break;
+
+        case XZD_CHECK:
+            if (!UF2_xzCollect(fds, input))
+                return 0;
+            if ((xz->check == XZ_CHECK_CRC32 && MEM_readLE32(xz->buf) != (U32)xz->blockCheck)
+                || (xz->check == XZ_CHECK_CRC64 && MEM_readLE64(xz->buf) != xz->blockCheck))
+                return UF2_ERROR(checksum_wrong);
+            XZ_summaryAdd(&xz->blocks, xz->h.headerSize + xz->cSize + xz->checkSize, xz->uSize);
+            xz->state = XZD_BLOCK_START;
+            break;
+
+        case XZD_INDEX: {
+            if (xz->field != 0 && xz->index.count == xz->indexCount) {
+                xz->state = XZD_INDEX_PADDING;
+                break;
+            }
+            int const b = UF2_xzNextByte(fds, input);
+            if (b < 0)
+                return 0;
+            BYTE const byte = (BYTE)b;
+            xz->indexCrc = XZ_crc32(xz->indexCrc, &byte, 1);
+            ++xz->indexSize;
+            xz->vli |= (U64)(byte & 0x7F) << (7 * xz->vliBytes);
+            ++xz->vliBytes;
+            if (byte & 0x80) {
+                if (xz->vliBytes == XZ_VLI_BYTES_MAX)
+                    return UF2_ERROR(corruption_detected);
+                break;
+            }
+            if (xz->vliBytes > 1 && byte == 0)
+                return UF2_ERROR(corruption_detected);      /* a VLI must use as few bytes as possible */
+            U64 const value = xz->vli;
+            xz->vli = 0;
+            xz->vliBytes = 0;
+            if (xz->field == 0) {
+                if (value != xz->blocks.count)
+                    return UF2_ERROR(corruption_detected);
+                xz->indexCount = value;
+                xz->field = 1;
+            }
+            else if (xz->field == 1) {
+                if (value == 0)
+                    return UF2_ERROR(corruption_detected);
+                xz->unpadded = value;
+                xz->field = 2;
+            }
+            else {
+                XZ_summaryAdd(&xz->index, xz->unpadded, value);
+                if (xz->index.unpadded > xz->blocks.unpadded || xz->index.uncompressed > xz->blocks.uncompressed)
+                    return UF2_ERROR(corruption_detected);
+                xz->field = 1;
+            }
+            break;
+        }
+        case XZD_INDEX_PADDING:
+            if (xz->indexSize & 3) {
+                int const b = UF2_xzNextByte(fds, input);
+                if (b < 0)
+                    return 0;
+                if (b != 0)
+                    return UF2_ERROR(corruption_detected);  /* Index Padding must be zero */
+                BYTE const zero = 0;
+                xz->indexCrc = XZ_crc32(xz->indexCrc, &zero, 1);
+                ++xz->indexSize;
+                break;
+            }
+            if (xz->index.unpadded != xz->blocks.unpadded
+                || xz->index.uncompressed != xz->blocks.uncompressed
+                || xz->index.crc != xz->blocks.crc)
+                return UF2_ERROR(corruption_detected);      /* the Index must describe the blocks decoded */
+            xz->have = 0;
+            xz->need = 4;
+            xz->state = XZD_INDEX_CRC;
+            break;
+
+        case XZD_INDEX_CRC:
+            if (!UF2_xzCollect(fds, input))
+                return 0;
+            if (MEM_readLE32(xz->buf) != xz->indexCrc)
+                return UF2_ERROR(corruption_detected);
+            xz->indexSize += 4;
+            xz->have = 0;
+            xz->need = XZ_STREAM_FOOTER_SIZE;
+            xz->state = XZD_FOOTER;
+            break;
+
+        case XZD_FOOTER: {
+            if (!UF2_xzCollect(fds, input))
+                return 0;
+            const BYTE *const f = xz->buf;
+            if (MEM_readLE32(f) != XZ_crc32(0, f + 4, 6)
+                || ((U64)MEM_readLE32(f + 4) + 1) * 4 != xz->indexSize
+                || f[8] != xz->streamFlags[0] || f[9] != xz->streamFlags[1]
+                || f[10] != 'Y' || f[11] != 'Z')
+                return UF2_ERROR(corruption_detected);
+            xz->streamPadding = 0;
+            xz->state = XZD_BETWEEN;
+            fds->stage = UF2DEC_STAGE_FINISHED;
+            break;
+        }
+        case XZD_BETWEEN: {
+            /* Finished at a Stream boundary; more input may add Stream Padding, in
+             * multiples of four zero bytes, or another Stream. */
+            int const b = UF2_xzNextByte(fds, input);
+            if (b < 0)
+                return 0;
+            if (b == 0) {
+                ++xz->streamPadding;
+                fds->stage = (xz->streamPadding & 3) ? UF2DEC_STAGE_XZ : UF2DEC_STAGE_FINISHED;
+                break;
+            }
+            if (b != XZ_magic[0] || (xz->streamPadding & 3))
+                return UF2_ERROR(corruption_detected);      /* anything else trailing is an error, as in xz */
+            UF2_xzStartStream(xz);
+            xz->buf[0] = (BYTE)b;
+            xz->have = 1;
+            fds->stage = UF2DEC_STAGE_XZ;
+            break;
+        }
+        }
+    }
 }
 
 #ifndef UF2_SINGLETHREAD
@@ -1654,6 +1978,7 @@ static void UF2_resetDStream(UF2_DStream *fds)
 #endif
     fds->loopCount = 0;
     fds->wait = 0;
+    fds->isXz = 0;
 }
 
 UF2LIB_API UF2_DStream *UF2LIB_CALL UF2_createDStreamMt(unsigned nbThreads)
@@ -1675,6 +2000,7 @@ UF2LIB_API UF2_DStream *UF2LIB_CALL UF2_createDStreamMt(unsigned nbThreads)
         fds->xxh = NULL;
 #endif
         fds->doHash = 0;
+        fds->xz = NULL;
     }
 
     return fds;
@@ -1689,6 +2015,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_freeDStream(UF2_DStream* fds)
 #ifndef NO_XXHASH
         XXH32_freeState(fds->xxh);
 #endif
+        UF2_free(fds->xz);
         UF2_free(fds);
     }
     return 0;
@@ -1763,16 +2090,31 @@ static size_t UF2_decompressStream_blocking(UF2_DStream* fds, UF2_outBuffer* out
     size_t const prevOut = output->pos;
     size_t const prevIn = input->pos;
 
-    if (input->pos < input->size
+    if (fds->stage == UF2DEC_STAGE_INIT && input->pos < input->size
+        && ((const BYTE*)input->src)[input->pos] == XZ_magic[0]) {
+        /* 0xFD opens every .xz file and is never a native property byte. The
+         * .xz decoder is single-threaded; it runs on its own context below. */
+        if (fds->xz == NULL) {
+            fds->xz = UF2_malloc(sizeof(XZ_dec));
+            if (fds->xz == NULL)
+                return UF2_ERROR(memory_allocation);
+        }
+        UF2_xzStartStream(fds->xz);
+        fds->isXz = 1;
+        fds->doHash = 0;    /* the end of each block's LZMA2 data leads to .xz framing, never to a hash */
+        fds->stage = UF2DEC_STAGE_XZ;
+    }
+
+    if (fds->isXz) {
+        CHECK_F(UF2_decompressXzInput(fds, output, input));
+    }
+    else if (input->pos < input->size
 #ifndef UF2_SINGLETHREAD
         || decmt
 #endif
         ) {
         if (fds->stage == UF2DEC_STAGE_INIT) {
             BYTE prop = ((const BYTE*)input->src)[input->pos];
-            /* .xz is decoded by the one-shot functions only, for now */
-            if (prop == XZ_magic[0])
-                return UF2_ERROR(parameter_unsupported);
             CHECK_F(UF2_initDStream_prop(fds, prop));
             ++input->pos;
             fds->stage = UF2DEC_STAGE_DECOMP;

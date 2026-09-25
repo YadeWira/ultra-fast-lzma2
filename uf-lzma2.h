@@ -451,7 +451,11 @@ UF2LIB_API size_t UF2LIB_CALL UF2_initDStream_withProp(UF2_DStream* fds, unsigne
  *  Reads data from input and decompresses to output.
  *  Returns 1 if the stream is unfinished, 0 if the terminator was encountered (he'll be back)
  *  and all data was written to output, or an error code. Call this function repeatedly if
- *  necessary, removing data from output and/or loading data into input before each call. */
+ *  necessary, removing data from output and/or loading data into input before each call.
+ *  .xz input is recognised by its first byte and decoded on one thread, whatever the stream's
+ *  thread count. 0 is returned at the end of each .xz Stream; further input may continue with
+ *  Stream Padding or another Stream, as in a concatenated file, and anything else after a Stream
+ *  is an error. */
 UF2LIB_API size_t UF2LIB_CALL UF2_decompressStream(UF2_DStream* fds, UF2_outBuffer* output, UF2_inBuffer* input);
 
 /*-***************************************************************************
@@ -580,14 +584,15 @@ typedef enum {
                              * after the stream terminator. The value will be checked on decompression.
                              * 0 = do not calculate; 1 = calculate (default) */
 #endif
-    UF2_p_format,           /* Container written by the one-shot compression functions
-                             * (UF2_compressCCtx, UF2_compressMt):
+    UF2_p_format,           /* Container written by compression, one-shot and streaming:
                              * UF2_format_native (default) - this library's own framing: a property byte,
                              *   the LZMA2 data and an optional xxhash. Other decoders cannot read it.
                              * UF2_format_xz - a standard .xz file, readable by xz, 7-Zip and any other
                              *   .xz decoder, protected by the check selected with UF2_p_xzCheck.
-                             * Streaming compression does not support UF2_format_xz yet and returns
-                             * parameter_unsupported. Decompression detects either format by itself. */
+                             *   Streamed .xz starts a block at each dictionary reset, like the one-shot
+                             *   default, but its Block Headers omit the sizes, which are not known when
+                             *   a header is written; such a file decompresses on one thread only.
+                             * Decompression, one-shot and streaming, detects either format by itself. */
     UF2_p_xzCheck,          /* Integrity check stored in .xz output, numbered as in the .xz specification:
                              * 0 = none, 1 = CRC32, 4 = CRC64 (default, as xz itself uses).
                              * SHA-256 (10) is not supported. */
@@ -607,7 +612,8 @@ typedef enum {
                              *   resetInterval bytes, which costs no ratio, since the encoder resets
                              *   there anyway; a single block if resetInterval is 0.
                              * Otherwise at least UF2_XZ_BLOCKSIZE_MIN. Smaller blocks decompress on
-                             * more threads and compress worse, each one starting a new dictionary. */
+                             * more threads and compress worse, each one starting a new dictionary.
+                             * Streaming compression ignores it: a block starts at each dictionary reset. */
 #ifdef RMF_REFERENCE
     UF2_p_useReferenceMF    /* Use the reference matchfinder for development purposes. SLOW. */
 #endif
