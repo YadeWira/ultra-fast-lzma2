@@ -217,7 +217,7 @@ However, no warranty or fitness for a particular purpose is expressed or implied
 
 
 
-Changes since v1.2.0:
+Changes in v1.3.0:
 
 - Multi-block .xz: `UF2_p_xzBlockSize`, one block per dictionary reset by default, and parallel
   decoding of multi-block .xz, this library's or xz's, on a multi-threaded context. See
