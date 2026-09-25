@@ -475,6 +475,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_decompressStream(UF2_DStream* fds, UF2_outBuff
 #define UF2_BLOCK_OVERLAP_MIN 0
 #define UF2_BLOCK_OVERLAP_MAX 14
 #define UF2_RESET_INTERVAL_MIN 1
+#define UF2_XZ_BLOCKSIZE_MIN   ((size_t)1 << 20)
 #define UF2_RESET_INTERVAL_MAX 16  /* small enough to fit UF2_DICTSIZE_MAX * UF2_RESET_INTERVAL_MAX in 32-bit size_t */
 #define UF2_BUFFER_RESIZE_MIN 0
 #define UF2_BUFFER_RESIZE_MAX 4
@@ -599,6 +600,14 @@ typedef enum {
                              * compression ignores it. 0 = off (default), 1 = on.
                              * The top level of each table (UF2_maxCLevel(), UF2_maxHighCLevel()) is
                              * the level below it with the search enabled. */
+    UF2_p_xzBlockSize,      /* Uncompressed size of each block of .xz output. Blocks are independent,
+                             * so an .xz file of several blocks decompresses on several threads, here
+                             * (UF2_decompressMt, UF2_createDCtxMt) and in xz 5.4 and later.
+                             * 0 (default) = one block per dictionary reset: dictionarySize *
+                             *   resetInterval bytes, which costs no ratio, since the encoder resets
+                             *   there anyway; a single block if resetInterval is 0.
+                             * Otherwise at least UF2_XZ_BLOCKSIZE_MIN. Smaller blocks decompress on
+                             * more threads and compress worse, each one starting a new dictionary. */
 #ifdef RMF_REFERENCE
     UF2_p_useReferenceMF    /* Use the reference matchfinder for development purposes. SLOW. */
 #endif

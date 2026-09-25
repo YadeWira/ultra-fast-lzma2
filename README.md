@@ -117,6 +117,28 @@ The one-shot functions can wrap the same LZMA2 data in either of two containers.
   3.8%, CRC64 4.6% (the native xxhash is 2.1%). The CRCs are slicing-by-16; the byte-at-a-time
   version they replaced cost 22%.
 
+  The file is split into independent blocks of `UF2_p_xzBlockSize` bytes, so it decompresses on
+  several threads, with `UF2_decompressMt()` or `UF2_createDCtxMt()` here and with xz 5.4 or later.
+  By default a block ends wherever the encoder resets its dictionary anyway (dictionary size times
+  `UF2_p_resetInterval`, 4 by default), which costs only the block framing. Smaller blocks decompress
+  on more threads and compress worse, since each one starts a new dictionary. Silesia (211 MB, one
+  file), x86_64, assembler decoder, CRC64:
+
+  | level | block | size | 1 thread | 4 threads | 8 threads | 16 threads |
+  |---|---|---:|---:|---:|---:|---:|
+  | 10 | default (1 block) | 22.97% | 107 MB/s | 104 MB/s | 109 MB/s | 109 MB/s |
+  | 10 | 64 MiB (4 blocks) | 23.00% | 104 | 276 | 281 | 278 |
+  | 10 | 32 MiB | 23.17% | 107 | 295 | 505 | 542 |
+  | 10 | 16 MiB | 23.36% | 102 | 325 | 542 | 859 |
+  | 10 | 8 MiB | 23.67% | 102 | 337 | 557 | 803 |
+  | 6 | default (64 MiB, 4 blocks) | 23.67% | 101 | 274 | 272 | 271 |
+  | 6 | 16 MiB | 23.76% | 107 | 316 | 553 | 893 |
+
+  A block's decoder cannot start until the previous block's end is known, so only files whose Block
+  Headers state both sizes are decoded in parallel. This library always writes them, and so does xz
+  when it compresses on several threads; other files are decoded in order, as before. For reference,
+  xz 5.8.3 decodes the 16 MiB file above at 557 MB/s on 16 threads and 94 MB/s on one.
+
 To embed the stream in a container that stores the property byte itself, as 7-Zip does in .7z, set
 `UF2_p_omitProperties` and store `UF2_getCCtxDictProp()`. The output is then raw LZMA2 with no hash,
 readable by any LZMA2 decoder; this is how 7-Zip-zstd uses the library.
@@ -194,6 +216,17 @@ earlier version was released in the 7-Zip forks linked above. The library is con
 However, no warranty or fitness for a particular purpose is expressed or implied.
 
 
+
+Changes since v1.2.0:
+
+- Multi-block .xz: `UF2_p_xzBlockSize`, one block per dictionary reset by default, and parallel
+  decoding of multi-block .xz, this library's or xz's, on a multi-threaded context. See
+  [Output formats](#output-formats). An input no larger than dictionary size times reset interval
+  gives the same bytes as before (checked at levels 1, 6 and 10); a larger one now splits exactly
+  there, where the encoder's own resets used to land a little earlier (Silesia's files at level 1:
+  -0.17% to +0.09%).
+- `UF2_compressBound()` grows by 66 bytes per MiB of input, the worst case of 1 MiB blocks.
+- Fixed: builds with `NO_XXHASH` wrote .xz with no check instead of CRC64.
 
 Changes in v1.2.0:
 

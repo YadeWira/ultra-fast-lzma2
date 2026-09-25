@@ -25,7 +25,9 @@ extern "C" {
 #define XZ_STREAM_HEADER_SIZE 12
 #define XZ_STREAM_FOOTER_SIZE 12
 #define XZ_BLOCK_HEADER_MAX  28   /* size byte, flags, two 9-byte VLIs, one filter, padding, CRC32 */
-#define XZ_INDEX_MAX_1       24   /* index holding a single record, with padding and CRC32 */
+#define XZ_INDEX_RECORD_MAX  (2 * 9)   /* Unpadded Size and Uncompressed Size, one VLI each */
+/* an index of n records: indicator, record count, records, padding, CRC32 */
+#define XZ_INDEX_MAX(n)      (1 + 9 + (n) * XZ_INDEX_RECORD_MAX + 3 + 4)
 #define XZ_LZMA2_FILTER_ID   0x21
 #define XZ_VLI_BYTES_MAX     9
 
@@ -35,8 +37,13 @@ extern "C" {
 #define XZ_CHECK_CRC64  4
 #define XZ_CHECK_SHA256 10
 
-/* worst-case bytes a single-block .xz adds around the LZMA2 data */
-#define XZ_OVERHEAD_MAX (XZ_STREAM_HEADER_SIZE + XZ_BLOCK_HEADER_MAX + 3 + 8 + XZ_INDEX_MAX_1 + XZ_STREAM_FOOTER_SIZE)
+/* Worst-case bytes each block costs beyond its share of one LZMA2 stream: Block
+ * Header, Block Padding, check, index record, and the end marker and chunk
+ * rounding that ending one LZMA2 stream and starting another adds (at most 9
+ * bytes by LZMA2_compressBound). */
+#define XZ_BLOCK_OVERHEAD_MAX (XZ_BLOCK_HEADER_MAX + 3 + 8 + XZ_INDEX_RECORD_MAX + 9)
+/* worst-case bytes an .xz file of n blocks adds to one LZMA2 stream of the same input */
+#define XZ_OVERHEAD_MAX(n) (XZ_STREAM_HEADER_SIZE + XZ_INDEX_MAX(0) + XZ_STREAM_FOOTER_SIZE + (n) * XZ_BLOCK_OVERHEAD_MAX)
 
 extern const BYTE XZ_magic[XZ_MAGIC_SIZE];
 

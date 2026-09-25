@@ -108,8 +108,9 @@ UF2LIB_API size_t UF2LIB_CALL UF2_setLargeAllocator(void* (*allocFunction)(size_
 ******************************************/
 UF2LIB_API size_t UF2LIB_CALL UF2_compressBound(size_t srcSize)
 {
-	/* large enough for either format: .xz adds at most XZ_OVERHEAD_MAX bytes of framing */
-	return LZMA2_compressBound(srcSize) + XZ_OVERHEAD_MAX;
+	/* Large enough for either format. An .xz file's blocks are never smaller than
+	 * UF2_XZ_BLOCKSIZE_MIN except for the last, which bounds how many there are. */
+	return LZMA2_compressBound(srcSize) + XZ_OVERHEAD_MAX(srcSize / UF2_XZ_BLOCKSIZE_MIN + 1);
 }
 
 /*-****************************************

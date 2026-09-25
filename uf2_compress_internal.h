@@ -48,6 +48,7 @@ typedef struct {
     BYTE xzCheck;   /* .xz check type */
     BYTE propSearch;    /* UF2_p_propertySearch, as set by the caller */
     BYTE levelSearch;   /* set by selecting the top level of a table */
+    size_t xzBlockSize; /* UF2_p_xzBlockSize; 0 = one block per dictionary reset */
 } UF2_CCtx_params;
 
 typedef struct {

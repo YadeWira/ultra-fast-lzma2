@@ -421,6 +421,263 @@ typedef struct {
     U64 uncompressed;
 } XZ_record;
 
+typedef struct {
+    size_t headerSize;
+    BYTE flags;
+    BYTE prop;
+    U64 cSize;      /* valid if flags & 0x40 */
+    U64 uSize;      /* valid if flags & 0x80 */
+} XZ_blockHeader;
+
+#define XZ_HAS_CSIZE 0x40
+#define XZ_HAS_USIZE 0x80
+
+/* Parse and verify the Block Header at in[0], in[0] being nonzero (not the Index
+ * Indicator). Returns 0 or an error code. */
+static size_t XZ_parseBlockHeader(const BYTE* in, size_t inSize, XZ_blockHeader* h)
+{
+    size_t const headerSize = ((size_t)in[0] + 1) * 4;
+    if (headerSize > inSize)
+        return UF2_ERROR(srcSize_wrong);
+    size_t const headerEnd = headerSize - 4;
+    if (MEM_readLE32(in + headerEnd) != XZ_crc32(0, in, headerSize - 4))
+        return UF2_ERROR(corruption_detected);
+
+    BYTE const flags = in[1];
+    if (flags & 0x3C)
+        return UF2_ERROR(parameter_unsupported);    /* reserved block flags */
+    if ((flags & 0x03) != 0)
+        return UF2_ERROR(parameter_unsupported);    /* a filter chain: only a lone LZMA2 is supported */
+
+    size_t q = 2, n;
+    h->cSize = 0;
+    h->uSize = 0;
+    if (flags & XZ_HAS_CSIZE) {
+        if ((n = XZ_vliDecode(in + q, headerEnd - q, &h->cSize)) == 0 || h->cSize == 0)
+            return UF2_ERROR(corruption_detected);
+        q += n;
+    }
+    if (flags & XZ_HAS_USIZE) {
+        if ((n = XZ_vliDecode(in + q, headerEnd - q, &h->uSize)) == 0)
+            return UF2_ERROR(corruption_detected);
+        q += n;
+    }
+    U64 filterId, propsSize;
+    if ((n = XZ_vliDecode(in + q, headerEnd - q, &filterId)) == 0)
+        return UF2_ERROR(corruption_detected);
+    q += n;
+    if (filterId != XZ_LZMA2_FILTER_ID)
+        return UF2_ERROR(parameter_unsupported);    /* BCJ, delta and the rest */
+    if ((n = XZ_vliDecode(in + q, headerEnd - q, &propsSize)) == 0 || propsSize != 1 || q + n >= headerEnd)
+        return UF2_ERROR(corruption_detected);
+    q += n;
+    BYTE const prop = in[q++];
+    if (prop > 40)
+        return UF2_ERROR(corruption_detected);
+    for (; q < headerEnd; ++q)
+        if (in[q] != 0)
+            return UF2_ERROR(corruption_detected);  /* Header Padding must be zero */
+
+    h->headerSize = headerSize;
+    h->flags = flags;
+    h->prop = prop;
+    return 0;
+}
+
+/* Verify the check of one decoded block against the field at `field`. */
+static size_t XZ_verifyCheck(unsigned check, const BYTE* field, const BYTE* data, size_t size)
+{
+    if (check == XZ_CHECK_CRC32) {
+        if (MEM_readLE32(field) != XZ_crc32(0, data, size))
+            return UF2_ERROR(checksum_wrong);
+    }
+    else if (check == XZ_CHECK_CRC64) {
+        if (MEM_readLE64(field) != XZ_crc64(0, data, size))
+            return UF2_ERROR(checksum_wrong);
+    }
+    return 0;
+}
+
+static size_t XZ_addRecord(XZ_record** records, size_t* nRecords, size_t* capRecords, U64 unpadded, U64 uncompressed)
+{
+    if (*nRecords == *capRecords) {
+        size_t const newCap = *capRecords ? *capRecords * 2 : 16;
+        XZ_record *const r = realloc(*records, newCap * sizeof(XZ_record));
+        if (r == NULL)
+            return UF2_ERROR(memory_allocation);
+        *records = r;
+        *capRecords = newCap;
+    }
+    (*records)[*nRecords].unpadded = unpadded;
+    (*records)[*nRecords].uncompressed = uncompressed;
+    ++*nRecords;
+    return 0;
+}
+
+#ifndef UF2_SINGLETHREAD
+
+/* One .xz block to decode on its own. */
+typedef struct {
+    const BYTE* src;    /* LZMA2 data */
+    size_t cSize;
+    BYTE* dst;
+    size_t uSize;
+    const BYTE* check;  /* the check field */
+    BYTE prop;
+    size_t res;
+} XZ_blockJob;
+
+typedef struct {
+    UF2_DCtx* dctx;
+    XZ_blockJob* jobs;
+    size_t nJobs;
+    size_t nThreads;
+    unsigned check;
+} XZ_blocksMt;
+
+/* UF2POOL_function type: thread n decodes blocks n, n + nThreads, ... Blocks are
+ * of equal size except the last, so striding balances the load without a queue. */
+static void UF2_decompressXzBlocks(void* const opaque, ptrdiff_t const n)
+{
+    XZ_blocksMt* const mt = (XZ_blocksMt*)opaque;
+    LZMA2_DCtx* const dec = mt->dctx->blocks[n].dec;
+
+    for (size_t j = (size_t)n; j < mt->nJobs; j += mt->nThreads) {
+        XZ_blockJob* const job = mt->jobs + j;
+        size_t res = LZMA2_initDecoder(dec, job->prop, job->dst, job->uSize);
+        if (!UF2_isError(res)) {
+            size_t used = job->cSize;
+            res = LZMA2_decodeToDic(dec, job->uSize, job->src, &used, LZMA_FINISH_END);
+            /* the block must end exactly where both of its header's sizes say */
+            if (!UF2_isError(res)
+                && (res != LZMA_STATUS_FINISHED || used != job->cSize || dec->dic_pos != job->uSize))
+                res = UF2_ERROR(corruption_detected);
+        }
+        if (!UF2_isError(res))
+            res = XZ_verifyCheck(mt->check, job->check, job->dst, job->uSize);
+        job->res = res;
+    }
+}
+
+/* Decode the blocks of one Stream on all threads. Only possible when every Block
+ * Header states both sizes, which is how this library, and xz when it compresses
+ * on several threads, write them; otherwise a block's end is found only by
+ * decoding it. Returns 1 if the blocks were not decoded here and the caller must
+ * decode them in sequence, else 0 with *p at the Index Indicator and the records
+ * filled in, or an error code. */
+static size_t UF2_decompressXzBlocksMt(UF2_DCtx* dctx,
+    BYTE* out, size_t outCapacity,
+    const BYTE* in, size_t inSize, unsigned check,
+    size_t* p, size_t* op, XZ_record** records, size_t* nRecords, size_t* capRecords)
+{
+    size_t const checkSize = (size_t)XZ_checkSize(check);
+    XZ_blockJob* jobs = NULL;
+    size_t nJobs = 0, capJobs = 0;
+    size_t q = *p, o = 0;
+    size_t res = 0;
+
+    /* ---- walk the headers: every block's place in the input and in the output ---- */
+    for (;;) {
+        if (q >= inSize) {
+            res = UF2_ERROR(srcSize_wrong);
+            goto done;
+        }
+        if (in[q] == 0x00)
+            break;
+        XZ_blockHeader h;
+        res = XZ_parseBlockHeader(in + q, inSize - q, &h);
+        if (UF2_isError(res))
+            goto done;
+        if ((h.flags & (XZ_HAS_CSIZE | XZ_HAS_USIZE)) != (XZ_HAS_CSIZE | XZ_HAS_USIZE)) {
+            res = 1;
+            goto done;
+        }
+        size_t const d = q + h.headerSize;
+        if (h.cSize > inSize - d) {
+            res = UF2_ERROR(srcSize_wrong);
+            goto done;
+        }
+        if (h.uSize > outCapacity - o) {
+            res = UF2_ERROR(dstSize_tooSmall);
+            goto done;
+        }
+        size_t const cSize = (size_t)h.cSize;
+        size_t e = d + cSize;
+        size_t const padding = (4 - (cSize & 3)) & 3;
+        if (padding + checkSize > inSize - e) {
+            res = UF2_ERROR(srcSize_wrong);
+            goto done;
+        }
+        for (size_t k = 0; k < padding; ++k)
+            if (in[e + k] != 0) {
+                res = UF2_ERROR(corruption_detected);   /* Block Padding must be zero */
+                goto done;
+            }
+        e += padding;
+
+        if (nJobs == capJobs) {
+            size_t const newCap = capJobs ? capJobs * 2 : 16;
+            XZ_blockJob *const j = realloc(jobs, newCap * sizeof(XZ_blockJob));
+            if (j == NULL) {
+                res = UF2_ERROR(memory_allocation);
+                goto done;
+            }
+            jobs = j;
+            capJobs = newCap;
+        }
+        jobs[nJobs].src = in + d;
+        jobs[nJobs].cSize = cSize;
+        jobs[nJobs].dst = out + o;
+        jobs[nJobs].uSize = (size_t)h.uSize;
+        jobs[nJobs].check = in + e;
+        jobs[nJobs].prop = h.prop;
+        jobs[nJobs].res = 0;
+        ++nJobs;
+        res = XZ_addRecord(records, nRecords, capRecords, h.headerSize + cSize + checkSize, h.uSize);
+        if (UF2_isError(res))
+            goto done;
+
+        o += (size_t)h.uSize;
+        q = e + checkSize;
+    }
+    /* A lone block is left to the sequential path, whose decoder can still split
+     * it at any dictionary resets inside. */
+    if (nJobs < 2) {
+        res = 1;
+        goto done;
+    }
+
+    /* ---- decode ---- */
+    {
+        XZ_blocksMt mt;
+        mt.dctx = dctx;
+        mt.jobs = jobs;
+        mt.nJobs = nJobs;
+        mt.nThreads = MIN(dctx->nbThreads, nJobs);
+        mt.check = check;
+        UF2POOL_addRange(dctx->factory, UF2_decompressXzBlocks, &mt, 1, (ptrdiff_t)mt.nThreads);
+        UF2_decompressXzBlocks(&mt, 0);
+        UF2POOL_waitAll(dctx->factory, 0);
+    }
+    /* the first failing block decides the error, as if they had been decoded in order */
+    for (size_t j = 0; j < nJobs; ++j)
+        if (UF2_isError(jobs[j].res)) {
+            res = jobs[j].res;
+            goto done;
+        }
+    *p = q;
+    *op = o;
+    res = 0;
+
+done:
+    free(jobs);
+    if (res == 1)
+        *nRecords = 0;      /* the sequential path starts the records over */
+    return res;
+}
+
+#endif /* !UF2_SINGLETHREAD */
+
 /* Decode one .xz Stream starting at in[0]. Validates every CRC32 of the framing,
  * the check of each block, and the Index against the blocks actually decoded,
  * the way xz itself does. */
@@ -450,6 +707,19 @@ static size_t UF2_decompressXzStream(UF2_DCtx* dctx,
 
 #define XZ_FAIL(code) do { err = UF2_ERROR(code); goto fail; } while (0)
 
+#ifndef UF2_SINGLETHREAD
+    if (dctx->blocks != NULL) {
+        size_t const r = UF2_decompressXzBlocksMt(dctx, out, outCapacity, in, inSize, check,
+            &p, &op, &records, &nRecords, &capRecords);
+        if (UF2_isError(r)) {
+            err = r;
+            goto fail;
+        }
+        if (r == 0)
+            goto index;
+    }
+#endif
+
     /* ---- blocks, until the Index Indicator ---- */
     for (;;) {
         if (p >= inSize)
@@ -457,66 +727,30 @@ static size_t UF2_decompressXzStream(UF2_DCtx* dctx,
         if (in[p] == 0x00)
             break;
 
-        size_t const headerSize = ((size_t)in[p] + 1) * 4;
-        if (headerSize > inSize - p)
-            XZ_FAIL(srcSize_wrong);
-        size_t const headerEnd = p + headerSize - 4;
-        if (MEM_readLE32(in + headerEnd) != XZ_crc32(0, in + p, headerSize - 4))
-            XZ_FAIL(corruption_detected);
+        XZ_blockHeader h;
+        err = XZ_parseBlockHeader(in + p, inSize - p, &h);
+        if (UF2_isError(err))
+            goto fail;
 
-        BYTE const flags = in[p + 1];
-        if (flags & 0x3C)
-            XZ_FAIL(parameter_unsupported);         /* reserved block flags */
-        if ((flags & 0x03) != 0)
-            XZ_FAIL(parameter_unsupported);         /* a filter chain: only a lone LZMA2 is supported */
-
-        size_t q = p + 2, n;
-        U64 cSizeField = 0, uSizeField = 0;
-        if (flags & 0x40) {
-            if ((n = XZ_vliDecode(in + q, headerEnd - q, &cSizeField)) == 0 || cSizeField == 0)
-                XZ_FAIL(corruption_detected);
-            q += n;
-        }
-        if (flags & 0x80) {
-            if ((n = XZ_vliDecode(in + q, headerEnd - q, &uSizeField)) == 0)
-                XZ_FAIL(corruption_detected);
-            q += n;
-        }
-        U64 filterId, propsSize;
-        if ((n = XZ_vliDecode(in + q, headerEnd - q, &filterId)) == 0)
-            XZ_FAIL(corruption_detected);
-        q += n;
-        if (filterId != XZ_LZMA2_FILTER_ID)
-            XZ_FAIL(parameter_unsupported);         /* BCJ, delta and the rest */
-        if ((n = XZ_vliDecode(in + q, headerEnd - q, &propsSize)) == 0 || propsSize != 1 || q + n >= headerEnd)
-            XZ_FAIL(corruption_detected);
-        q += n;
-        BYTE const prop = in[q++];
-        if (prop > 40)
-            XZ_FAIL(corruption_detected);
-        for (; q < headerEnd; ++q)
-            if (in[q] != 0)
-                XZ_FAIL(corruption_detected);       /* Header Padding must be zero */
-
-        size_t const d = p + headerSize;
+        size_t const d = p + h.headerSize;
         size_t avail = inSize - d;
-        if (flags & 0x40) {
-            if (cSizeField > avail)
+        if (h.flags & XZ_HAS_CSIZE) {
+            if (h.cSize > avail)
                 XZ_FAIL(srcSize_wrong);
-            avail = (size_t)cSizeField;
+            avail = (size_t)h.cSize;
         }
-        if ((flags & 0x80) && uSizeField > outCapacity - op)
+        if ((h.flags & XZ_HAS_USIZE) && h.uSize > outCapacity - op)
             XZ_FAIL(dstSize_tooSmall);
 
         size_t used = 0;
-        size_t const dSize = UF2_decompressLzma2(dctx, prop, out + op, outCapacity - op, in + d, avail, &used);
+        size_t const dSize = UF2_decompressLzma2(dctx, h.prop, out + op, outCapacity - op, in + d, avail, &used);
         if (UF2_isError(dSize)) {
             err = dSize;
             goto fail;
         }
-        if ((flags & 0x40) && used != cSizeField)
+        if ((h.flags & XZ_HAS_CSIZE) && used != h.cSize)
             XZ_FAIL(corruption_detected);
-        if ((flags & 0x80) && dSize != uSizeField)
+        if ((h.flags & XZ_HAS_USIZE) && dSize != h.uSize)
             XZ_FAIL(corruption_detected);
 
         size_t e = d + used;
@@ -528,31 +762,20 @@ static size_t UF2_decompressXzStream(UF2_DCtx* dctx,
                 XZ_FAIL(corruption_detected);       /* Block Padding must be zero */
         e += padding;
 
-        if (check == XZ_CHECK_CRC32) {
-            if (MEM_readLE32(in + e) != XZ_crc32(0, out + op, dSize))
-                XZ_FAIL(checksum_wrong);
-        }
-        else if (check == XZ_CHECK_CRC64) {
-            if (MEM_readLE64(in + e) != XZ_crc64(0, out + op, dSize))
-                XZ_FAIL(checksum_wrong);
-        }
-
-        if (nRecords == capRecords) {
-            size_t const newCap = capRecords ? capRecords * 2 : 16;
-            XZ_record *const r = realloc(records, newCap * sizeof(XZ_record));
-            if (r == NULL)
-                XZ_FAIL(memory_allocation);
-            records = r;
-            capRecords = newCap;
-        }
-        records[nRecords].unpadded = headerSize + used + checkSize;
-        records[nRecords].uncompressed = dSize;
-        ++nRecords;
+        err = XZ_verifyCheck(check, in + e, out + op, dSize);
+        if (UF2_isError(err))
+            goto fail;
+        err = XZ_addRecord(&records, &nRecords, &capRecords, h.headerSize + used + checkSize, dSize);
+        if (UF2_isError(err))
+            goto fail;
 
         op += dSize;
         p = e + checkSize;
     }
 
+#ifndef UF2_SINGLETHREAD
+index:
+#endif
     /* ---- Index: it must describe exactly the blocks just decoded ---- */
     {
         size_t const indexStart = p;
