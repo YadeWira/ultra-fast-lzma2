@@ -1229,6 +1229,9 @@ static size_t UF2_xzPending(const UF2_xzOut *const b)
 /* Copy as much of a framing buffer as fits. Returns 1 if some is left. */
 static int UF2_xzDrain(UF2_xzOut *const b, UF2_outBuffer *const output)
 {
+    /* nothing queued, and in the native format the buffer is never allocated */
+    if (UF2_xzPending(b) == 0)
+        return 0;
     size_t const n = MIN(UF2_xzPending(b), output->size - output->pos);
     memcpy((BYTE*)output->dst + output->pos, b->data + b->pos, n);
     b->pos += n;
