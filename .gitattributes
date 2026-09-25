@@ -1,2 +1,3 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# The .xz test fixtures and their originals are compared byte for byte:
+# no line-ending conversion on checkout.
+test/xz/** binary
