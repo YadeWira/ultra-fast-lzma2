@@ -2139,3 +2139,9 @@ static const U64 crc64Table[16][256] = {
     0x81AF8AF1E911888AULL,
   },
 };
+
+/* Fold constants for a carry-less multiply: XZ_CRCnn_K[e] is x^e mod P as a
+ * reflected 64-bit value, for e = 127, 191, 511, 575 in that order. Checked
+ * against the tables above by simulating the fold before this file was written. */
+static const U64 XZ_CRC32_K[4] = { 0x9BA54C6F00000000ULL, 0x65673B4600000000ULL, 0xCAD38E8F00000000ULL, 0x653D982200000000ULL };
+static const U64 XZ_CRC64_K[4] = { 0xDABE95AFC7875F40ULL, 0xE05DD497CA393AE4ULL, 0x081F6054A7842DF4ULL, 0x6AE3EFBB9DD441F3ULL };

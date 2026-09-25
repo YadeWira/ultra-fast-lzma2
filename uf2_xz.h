@@ -49,8 +49,12 @@ extern const BYTE XZ_magic[XZ_MAGIC_SIZE];
 
 int XZ_isXz(const void *src, size_t srcSize);
 
+/* Hardware carry-less multiply where the processor has one, tables otherwise */
 U32 XZ_crc32(U32 crc, const void *buf, size_t size);
 U64 XZ_crc64(U64 crc, const void *buf, size_t size);
+/* Tables only, whatever the processor: the reference the fast paths are tested against */
+U32 XZ_crc32Portable(U32 crc, const void *buf, size_t size);
+U64 XZ_crc64Portable(U64 crc, const void *buf, size_t size);
 
 /* Size in bytes of the check field for a check type, or -1 if the type is not
  * one the specification defines. */

@@ -312,5 +312,6 @@ bench/bench
 bench/curve
 fuzzer/fuzzer
 test/file_test
+test/crc_check
 test/xz_check
 test/xz_out/

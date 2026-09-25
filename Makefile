@@ -114,6 +114,8 @@ XZ_OUT:=test/xz_out
 
 .PHONY: check
 check: test
+	$(CC) $(CFLAGS) -I. -o test/crc_check test/crc_check.c $(STATIC_LIBNAME) -pthread
+	$(RUN) test/crc_check
 	$(CC) $(CFLAGS) -I. -o test/xz_check test/xz_check.c $(STATIC_LIBNAME) -pthread
 	$(RM) $(XZ_OUT) && mkdir -p $(XZ_OUT)
 	$(RUN) test/xz_check test/xz $(XZ_OUT)
@@ -128,5 +130,5 @@ check: test
 .PHONY: clean
 clean:
 	$(RM) $(REAL_NAME) $(STATIC_LIBNAME) $(OBJ) $(DEP)
-	$(RM) test/xz_check $(XZ_OUT)
+	$(RM) test/crc_check test/xz_check $(XZ_OUT)
 	$(MAKE) -C ./test clean
