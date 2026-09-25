@@ -315,11 +315,11 @@ static UF2_CCtx *UF2_createCCtx_internal(unsigned nbThreads, int const dualBuffe
 
 #ifndef NO_XXHASH
     cctx->params.doXXH = 1;
+#endif
     cctx->params.format = UF2_format_native;
     cctx->params.xzCheck = XZ_CHECK_CRC64;
     cctx->params.propSearch = 0;
     cctx->params.levelSearch = 0;
-#endif
 
     cctx->matchTable = NULL;
     DICT_construct(&cctx->buf, dualBuffer);
