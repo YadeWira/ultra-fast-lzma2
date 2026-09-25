@@ -1716,8 +1716,15 @@ UF2LIB_API unsigned long long UF2LIB_CALL UF2_getDStreamProgress(const UF2_DStre
 
 static size_t UF2_initDStream_prop(UF2_DStream* const fds, BYTE prop)
 {
-    fds->doHash = prop >> UF2_PROP_HASH_BIT;
+    BYTE const doHash = prop >> UF2_PROP_HASH_BIT;
     prop &= UF2_LZMA_PROP_MASK;
+
+    /* Reject a bad property before anything depends on it. The hash flag in
+     * particular must stay clear until the hash state exists: decoding on after
+     * a failed init with the flag set dereferenced a NULL hash state. */
+    fds->doHash = 0;
+    if (prop > 40)
+        return UF2_ERROR(corruption_detected);
 
     /* If MT decoding is enabled and the dict is not too large, decoder init will occur elsewhere */
 #ifndef UF2_SINGLETHREAD
@@ -1726,7 +1733,7 @@ static size_t UF2_initDStream_prop(UF2_DStream* const fds, BYTE prop)
         CHECK_F(LZMA2_initDecoder(&fds->dec, prop, NULL, 0));
 
 #ifndef NO_XXHASH
-    if (fds->doHash) {
+    if (doHash) {
         if (fds->xxh == NULL) {
             DEBUGLOG(3, "Creating hash state");
             fds->xxh = XXH32_createState();
@@ -1736,6 +1743,7 @@ static size_t UF2_initDStream_prop(UF2_DStream* const fds, BYTE prop)
         XXH32_reset(fds->xxh, 0);
     }
 #endif
+    fds->doHash = doHash;
     return UF2_error_no_error;
 }
 
@@ -1765,8 +1773,8 @@ static size_t UF2_decompressStream_blocking(UF2_DStream* fds, UF2_outBuffer* out
             /* .xz is decoded by the one-shot functions only, for now */
             if (prop == XZ_magic[0])
                 return UF2_ERROR(parameter_unsupported);
+            CHECK_F(UF2_initDStream_prop(fds, prop));
             ++input->pos;
-            UF2_initDStream_prop(fds, prop);
             fds->stage = UF2DEC_STAGE_DECOMP;
         }
 #ifndef UF2_SINGLETHREAD
