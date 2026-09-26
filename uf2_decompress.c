@@ -498,6 +498,55 @@ static size_t XZ_verifyCheck(unsigned check, const BYTE* field, const BYTE* data
     return 0;
 }
 
+/* Continue the running check of a block over data[0..size) */
+static void XZ_updateCheck(unsigned check, U64* crc, const BYTE* data, size_t size)
+{
+    if (check == XZ_CHECK_CRC32)
+        *crc = XZ_crc32((U32)*crc, data, size);
+    else if (check == XZ_CHECK_CRC64)
+        *crc = XZ_crc64(*crc, data, size);
+}
+
+static size_t XZ_compareCheck(unsigned check, const BYTE* field, U64 crc)
+{
+    if ((check == XZ_CHECK_CRC32 && MEM_readLE32(field) != (U32)crc)
+        || (check == XZ_CHECK_CRC64 && MEM_readLE64(field) != crc))
+        return UF2_ERROR(checksum_wrong);
+    return 0;
+}
+
+/* Decode a block's LZMA2 data into dec, whose dictionary the caller has set to
+ * the block's output, and run its check as the output is written: XZ_CHECK_STEP
+ * bytes at a time, while they are still in cache. Checked after the whole block,
+ * which can be tens of MiB, the CRC read the output back from memory: CRC64 ran at
+ * 7.1 GB/s instead of 16 GB/s, and cost 1.7% of decompressing Silesia instead of
+ * 0.8% (E5-2697A v4, averages of three runs that overlap). Returns what
+ * LZMA2_decodeToDic() returns for the block as a whole: the steps before the last
+ * stop at their limit with LZMA_FINISH_ANY, and the last one, which reaches
+ * dicLimit, uses LZMA_FINISH_END as a single call would. *srcLen is the input
+ * available on entry and the input used on return. */
+#define XZ_CHECK_STEP ((size_t)1 << 18)
+
+static size_t XZ_decodeChecked(LZMA2_DCtx* dec, size_t dicLimit, const BYTE* src, size_t* srcLen,
+    unsigned check, U64* crc)
+{
+    size_t const avail = *srcLen;
+    size_t used = 0;
+    size_t res;
+    for (;;) {
+        size_t const from = dec->dic_pos;
+        size_t const limit = (dicLimit - from > XZ_CHECK_STEP) ? from + XZ_CHECK_STEP : dicLimit;
+        size_t len = avail - used;
+        res = LZMA2_decodeToDic(dec, limit, src + used, &len, limit == dicLimit ? LZMA_FINISH_END : LZMA_FINISH_ANY);
+        used += len;
+        XZ_updateCheck(check, crc, dec->dic + from, dec->dic_pos - from);
+        if (UF2_isError(res) || res != LZMA_STATUS_OUTPUT_FULL || limit == dicLimit)
+            break;
+    }
+    *srcLen = used;
+    return res;
+}
+
 static size_t XZ_addRecord(XZ_record** records, size_t* nRecords, size_t* capRecords, U64 unpadded, U64 uncompressed)
 {
     if (*nRecords == *capRecords) {
@@ -544,17 +593,18 @@ static void UF2_decompressXzBlocks(void* const opaque, ptrdiff_t const n)
 
     for (size_t j = (size_t)n; j < mt->nJobs; j += mt->nThreads) {
         XZ_blockJob* const job = mt->jobs + j;
+        U64 crc = 0;
         size_t res = LZMA2_initDecoder(dec, job->prop, job->dst, job->uSize);
         if (!UF2_isError(res)) {
             size_t used = job->cSize;
-            res = LZMA2_decodeToDic(dec, job->uSize, job->src, &used, LZMA_FINISH_END);
+            res = XZ_decodeChecked(dec, job->uSize, job->src, &used, mt->check, &crc);
             /* the block must end exactly where both of its header's sizes say */
             if (!UF2_isError(res)
                 && (res != LZMA_STATUS_FINISHED || used != job->cSize || dec->dic_pos != job->uSize))
                 res = UF2_ERROR(corruption_detected);
         }
         if (!UF2_isError(res))
-            res = XZ_verifyCheck(mt->check, job->check, job->dst, job->uSize);
+            res = XZ_compareCheck(mt->check, job->check, crc);
         job->res = res;
     }
 }
@@ -743,7 +793,28 @@ static size_t UF2_decompressXzStream(UF2_DCtx* dctx,
             XZ_FAIL(dstSize_tooSmall);
 
         size_t used = 0;
-        size_t const dSize = UF2_decompressLzma2(dctx, h.prop, out + op, outCapacity - op, in + d, avail, &used);
+        size_t dSize;
+        U64 crc = 0;
+        int checked = 0;
+#ifndef UF2_SINGLETHREAD
+        if (dctx->blocks != NULL) {
+            /* the multi-threaded decoder splits the block at its dictionary resets */
+            dSize = UF2_decompressLzma2(dctx, h.prop, out + op, outCapacity - op, in + d, avail, &used);
+        }
+        else
+#endif
+        {
+            dSize = LZMA2_initDecoder(&dctx->dec, h.prop, out + op, outCapacity - op);
+            if (!UF2_isError(dSize)) {
+                used = avail;
+                dSize = XZ_decodeChecked(&dctx->dec, outCapacity - op, in + d, &used, check, &crc);
+                if (dSize == LZMA_STATUS_NEEDS_MORE_INPUT)
+                    dSize = UF2_ERROR(srcSize_wrong);   /* all input is in memory */
+                else if (!UF2_isError(dSize))
+                    dSize = dctx->dec.dic_pos;
+                checked = 1;
+            }
+        }
         if (UF2_isError(dSize)) {
             err = dSize;
             goto fail;
@@ -762,7 +833,7 @@ static size_t UF2_decompressXzStream(UF2_DCtx* dctx,
                 XZ_FAIL(corruption_detected);       /* Block Padding must be zero */
         e += padding;
 
-        err = XZ_verifyCheck(check, in + e, out + op, dSize);
+        err = checked ? XZ_compareCheck(check, in + e, crc) : XZ_verifyCheck(check, in + e, out + op, dSize);
         if (UF2_isError(err))
             goto fail;
         err = XZ_addRecord(&records, &nRecords, &capRecords, h.headerSize + used + checkSize, dSize);
