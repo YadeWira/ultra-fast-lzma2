@@ -19,11 +19,14 @@ extra memory each. Binaries of 7-Zip forks that use it are available in the [7-Z
 
 - **Standard .xz**, one-shot and streaming, readable by xz, 7-Zip and any other .xz decoder. Multi-block
   files decompress on several threads: Silesia at level 10 with 16 MiB blocks, 859 MB/s on 16 threads.
+  The CRC check uses PCLMULQDQ or PMULL where there is one, and costs under 1% of decompression.
   See [Output formats](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Output-formats).
 - **Level 11**: level 10 plus a per-input search over lc/lp/pb that keeps the smallest output.
   Silesia 22.97% → 22.88%, AIT 53.80% → 52.64%. See [Findings](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Findings#ratio).
 - **An ARM64 assembler LZMA decoder**, ported from LZMA SDK 26.03; before, only x86_64 had one.
 - **v1.1.0**: fast-lzma2's dev branch, unreleased since 2019, with byte-identical output.
+- **`make check`**, the .xz and streaming tests, run by CI on every push on six configurations
+  including ARM64 and Windows.
 - **Measurement tools**: `bench/curve` for the speed/ratio curve, and `bench/lzbench/add_uflzma2.py`,
   which adds the library to lzbench with its assembler decoder. See [Building](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Building).
 - **Fixes**, among them a crash in streaming decompression inherited from fast-lzma2. See the
@@ -77,14 +80,21 @@ Radyx file archiver. An earlier version was released in the 7-Zip forks linked a
 considered suitable for production environments. However, no warranty or fitness for a particular
 purpose is expressed or implied.
 
-Changes in v1.4.0:
+Changes in v1.5.0:
 
-- Streaming .xz: `UF2_CStream` writes .xz with `UF2_p_format`, through `UF2_compressStream()`, the
-  zero-copy dictionary functions and with a timeout alike; `UF2_DStream` reads .xz, including
-  concatenated Streams. See [Output formats](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Output-formats).
-- Fixed: `UF2_decompressStream()` crashed on a native stream whose property byte had the hash flag
-  set and an invalid dictionary size (`FF 00` is enough): the failed init left the hash flag set with
-  no hash state. Inherited from fast-lzma2.
+- Hardware CRCs for .xz: CRC32 and CRC64 fold 64 bytes at a time with a carry-less multiply,
+  PCLMULQDQ on x86 (32 and 64 bit) and PMULL on ARM64 Linux and Apple, detected at run time; tables
+  elsewhere. One-shot decoding also runs the check 256 KiB at a time as each block is decoded,
+  while the data is in cache. The cost of CRC64 to decompressing Silesia fell from 6.4% to about
+  0.8% one-shot and from 4.9% to 0.4% streamed. See [Output formats](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Output-formats).
+- `make check`: .xz and streaming tests against files written by xz and 7-Zip and against the
+  library's own output, with a mutation stage, plus a hardware-against-tables CRC test. CI runs it on
+  every push for x86_64, x86_64 under ASan and UBSan, 32-bit x86, a single-threaded build without
+  xxhash, ARM64 under qemu and Windows x64. See [Building](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Building).
+- Fixed: streamed .xz output passed a NULL buffer to `memcpy` when no framing was queued (found by
+  UBSan; zero bytes were copied, so no output changed).
+- Build: `test/Makefile` keeps its include path when `CFLAGS` is given on the command line and links
+  the static library by name; the musl job of the binaries workflow now compiles `uf2_xz.c`.
 
 Earlier releases, back to fast-lzma2 v0.9.1, are in the [changelog](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Changelog).
 

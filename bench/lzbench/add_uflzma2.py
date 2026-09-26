@@ -66,7 +66,7 @@ int64_t lzbench_uflzma2_decompress(char *inbuf, size_t insize, char *outbuf, siz
 
 p = root / "bench/lzbench.h"; s = p.read_text()
 line = next(l for l in s.split("\n") if l.lstrip().startswith('{ "fastlzma2",'))
-new = line.replace('"fastlzma2",  "fastlzma2 1.0.1",        ', '"uflzma2",    "uf-lzma2 1.4.0",         ') \
+new = line.replace('"fastlzma2",  "fastlzma2 1.0.1",        ', '"uflzma2",    "uf-lzma2 1.5.0",         ') \
           .replace("lzbench_fastlzma2_compress,  lzbench_fastlzma2_decompress,  ",
                    "lzbench_uflzma2_compress,    lzbench_uflzma2_decompress,    ")
 # uf-lzma2 has one level more than fast-lzma2: its top level adds the lc/lp/pb search
