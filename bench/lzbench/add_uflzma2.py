@@ -12,7 +12,12 @@ the assembler LZMA decoder; the two produce identical compressed sizes, so the o
 difference between their rows is how they are built.
 
 The two libraries' internal symbols share names, so uf-lzma2 is linked into one
-relocatable object with every symbol but the UF2_* API made local. The main
+relocatable object in which every global symbol but the UF2_* API is renamed
+with a ufl2_ prefix. Renamed rather than made local: on Windows, GCC reaches
+extern data through COMDAT .refptr.<name> sections, and the PE linker keeps one
+.refptr.price_table for both libraries even when the symbol is local, so a local
+bundle read the other library's table and crashed from level 2 on (found by
+zpaq-std with mingw x64). The main
 `lzbench:` link line is not edited: a recipe-less rule adds the object instead,
 so this applies cleanly alongside other lzbench patches that edit that line.
 Written against lzbench 3d22c41; it stops with an error naming the anchor if a
@@ -115,8 +120,9 @@ lz/uf-lzma2/%.uo : lz/uf-lzma2/%.S
 
 $(UFLZMA2_BUNDLE): $(UFLZMA2_OBJ) $(UFLZMA2_ASM)
 	$(LD) -r -o $@.tmp $^
-	objcopy -w --keep-global-symbol='UF2_*' $@.tmp $@
-	rm -f $@.tmp
+	nm -g --defined-only $@.tmp | awk '$$NF !~ /^_?UF2_/ { print $$NF, "ufl2_" $$NF }' > $@.syms
+	objcopy --redefine-syms=$@.syms $@.tmp $@
+	rm -f $@.tmp $@.syms
 
 # A recipe-less rule adds a prerequisite without editing the main lzbench: line,
 # which other patches (lz6's, for one) also edit. The link recipe uses $^, which
