@@ -50,8 +50,24 @@ jobs:
         run: ${{ matrix.make }}
 
   windows:
-    name: windows x64 (mingw)
+    name: ${{ matrix.name }}
     runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows x64 (mingw)
+            msystem: MINGW64
+            gcc: mingw-w64-x86_64-gcc
+            make: make check
+          # Windows starts threads with a 4-byte aligned stack on 32-bit x86, which
+          # nothing on Linux reproduces; the 1.5.0 SSE code crashed there when built
+          # by a GCC that assumes 16 bytes, as Debian's mingw-w64 does. MSYS2's does
+          # not, so it is told to, or this job would pass with the bug in place.
+          - name: windows x86 (mingw)
+            msystem: MINGW32
+            gcc: mingw-w64-i686-gcc
+            make: make check x86_64=0 CFLAGS="-Wall -O2 -pthread -fPIC -mincoming-stack-boundary=4"
     defaults:
       run:
         shell: msys2 {0}
@@ -63,8 +79,8 @@ jobs:
       - name: Set up MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
-          install: make xz mingw-w64-x86_64-gcc
+          msystem: ${{ matrix.msystem }}
+          install: make xz ${{ matrix.gcc }}
 
       - name: Build and check
-        run: make check
+        run: ${{ matrix.make }}

@@ -96,7 +96,14 @@ U64 XZ_crc64Portable(U64 crc, const void *buf, size_t size)
 #    define XZ_TARGET
 #  else
 #    include <cpuid.h>
-#    define XZ_TARGET __attribute__((target("pclmul,sse2")))
+#    if defined(__i386__)
+/* On 32-bit x86 the stack is only 4-byte aligned on entry to a thread that
+ * Windows starts, while GCC assumes 16 bytes when it spills SSE registers:
+ * decoding .xz on the thread pool crashed on Windows 7 and 10. Realign on entry. */
+#      define XZ_TARGET __attribute__((target("pclmul,sse2"), force_align_arg_pointer))
+#    else
+#      define XZ_TARGET __attribute__((target("pclmul,sse2")))
+#    endif
 #  endif
 
 static int XZ_hwDetect(void)
