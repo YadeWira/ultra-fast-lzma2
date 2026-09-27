@@ -80,21 +80,15 @@ Radyx file archiver. An earlier version was released in the 7-Zip forks linked a
 considered suitable for production environments. However, no warranty or fitness for a particular
 purpose is expressed or implied.
 
-Changes in v1.5.0:
+Changes in v1.5.1:
 
-- Hardware CRCs for .xz: CRC32 and CRC64 fold 64 bytes at a time with a carry-less multiply,
-  PCLMULQDQ on x86 (32 and 64 bit) and PMULL on ARM64 Linux and Apple, detected at run time; tables
-  elsewhere. One-shot decoding also runs the check 256 KiB at a time as each block is decoded,
-  while the data is in cache. The cost of CRC64 to decompressing Silesia fell from 6.4% to about
-  0.8% one-shot and from 4.9% to 0.4% streamed. See [Output formats](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Output-formats).
-- `make check`: .xz and streaming tests against files written by xz and 7-Zip and against the
-  library's own output, with a mutation stage, plus a hardware-against-tables CRC test. CI runs it on
-  every push for x86_64, x86_64 under ASan and UBSan, 32-bit x86, a single-threaded build without
-  xxhash, ARM64 under qemu and Windows x64. See [Building](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Building).
-- Fixed: streamed .xz output passed a NULL buffer to `memcpy` when no framing was queued (found by
-  UBSan; zero bytes were copied, so no output changed).
-- Build: `test/Makefile` keeps its include path when `CFLAGS` is given on the command line and links
-  the static library by name; the musl job of the binaries workflow now compiles `uf2_xz.c`.
+- Fixed: on 32-bit x86 Windows, builds made by a GCC that assumes a 16-byte aligned stack (Debian's
+  mingw-w64 does) crashed with an access violation when the hardware CRC of 1.5.0 ran in a thread
+  that Windows started: multi-threaded or asynchronous .xz decompression, or any caller's own thread.
+  Windows starts threads with a 4-byte aligned stack on x86. The fold functions now realign it.
+  64-bit builds, MSVC builds, Linux and MSYS2's default i686 GCC were not affected. Checked on Windows 7
+  (x86 and x64) and Windows 10 (x86); CI now runs `make check` on Windows x86 too, set up so that it
+  crashes without the fix.
 
 Earlier releases, back to fast-lzma2 v0.9.1, are in the [changelog](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Changelog).
 
