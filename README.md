@@ -80,7 +80,7 @@ Radyx file archiver. An earlier version was released in the 7-Zip forks linked a
 considered suitable for production environments. However, no warranty or fitness for a particular
 purpose is expressed or implied.
 
-Changes since v1.5.1:
+Changes in v1.6.0:
 
 - `UF2_p_xzSizedHeaders`: streamed .xz can state both sizes in every Block Header, by holding each
   block in memory until it ends, so that it decompresses on several threads like one-shot output.
@@ -88,16 +88,9 @@ Changes since v1.5.1:
 - One-shot .xz: a block split at its dictionary resets by the multi-threaded decoder is now also
   checked while it is decoded, each thread over its part, with the parts' CRCs combined in order.
 - Two compiler warnings inherited from fast-lzma2 are gone.
-
-Changes in v1.5.1:
-
-- Fixed: on 32-bit x86 Windows, builds made by a GCC that assumes a 16-byte aligned stack (Debian's
-  mingw-w64 does) crashed with an access violation when the hardware CRC of 1.5.0 ran in a thread
-  that Windows started: multi-threaded or asynchronous .xz decompression, or any caller's own thread.
-  Windows starts threads with a 4-byte aligned stack on x86. The fold functions now realign it.
-  64-bit builds, MSVC builds, Linux and MSYS2's default i686 GCC were not affected. Checked on Windows 7
-  (x86 and x64) and Windows 10 (x86); CI now runs `make check` on Windows x86 too, set up so that it
-  crashes without the fix.
+- `bench/lzbench/add_uflzma2.py` renames the bundle's internal symbols instead of making them local,
+  which also works on Windows, where the PE linker merged a COMDAT section of the two libraries
+  (found by zpaq-std).
 
 Earlier releases, back to fast-lzma2 v0.9.1, are in the [changelog](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Changelog).
 
