@@ -55,6 +55,9 @@ U64 XZ_crc64(U64 crc, const void *buf, size_t size);
 /* Tables only, whatever the processor: the reference the fast paths are tested against */
 U32 XZ_crc32Portable(U32 crc, const void *buf, size_t size);
 U64 XZ_crc64Portable(U64 crc, const void *buf, size_t size);
+/* The CRC of A followed by B, from crc(A), crc(B) and the length of B */
+U32 XZ_crc32Combine(U32 crc1, U32 crc2, U64 len2);
+U64 XZ_crc64Combine(U64 crc1, U64 crc2, U64 len2);
 
 /* Size in bytes of the check field for a check type, or -1 if the type is not
  * one the specification defines. */

@@ -109,7 +109,12 @@ typedef struct
     size_t unpackSize;
     size_t res;
     LZMA2_finishMode finish;
+    unsigned check;     /* .xz check to run while decoding, or XZ_CHECK_NONE */
+    U64 crc;            /* the check of this block's output */
 } UF2_blockDecMt;
+
+static size_t XZ_decodeChecked(LZMA2_DCtx* dec, size_t dicLimit, const BYTE* src, size_t* srcLen,
+    unsigned check, U64* crc, LZMA2_finishMode lastFinish);
 
 struct UF2_DCtx_s
 {
@@ -118,6 +123,11 @@ struct UF2_DCtx_s
     UF2_blockDecMt *blocks;
     UF2POOL_ctx *factory;
     size_t nbThreads;
+    /* Set by the .xz decoder around a block it hands to the multi-threaded LZMA2
+     * decoder: each thread runs the check over its part as it decodes, and the
+     * parts' checks are combined here in order. XZ_CHECK_NONE otherwise. */
+    unsigned xzCheck;
+    U64 xzCrc;
 #endif
     BYTE lzma2prop;
 };
@@ -169,6 +179,8 @@ UF2LIB_API UF2_DCtx *UF2LIB_CALL UF2_createDCtxMt(unsigned nbThreads)
     dctx->nbThreads = 1;
     dctx->blocks = NULL;
     dctx->factory = NULL;
+    dctx->xzCheck = XZ_CHECK_NONE;
+    dctx->xzCrc = 0;
 
     if (nbThreads > 1) {
         dctx->blocks = UF2_malloc(nbThreads * sizeof(UF2_blockDecMt));
@@ -235,7 +247,14 @@ static void UF2_decompressCtxBlock(void* const jobDescription, ptrdiff_t const n
 
     DEBUGLOG(4, "Thread %u: decoding block of input size %u, output size %u", (unsigned)n, (unsigned)srcLen, (unsigned)blocks[n].unpackSize);
 
-    blocks[n].res = LZMA2_decodeToDic(blocks[n].dec, blocks[n].unpackSize, blocks[n].src, &srcLen, blocks[n].finish);
+    if (blocks[n].check != XZ_CHECK_NONE) {
+        blocks[n].crc = 0;
+        blocks[n].res = XZ_decodeChecked(blocks[n].dec, blocks[n].unpackSize, blocks[n].src, &srcLen,
+            blocks[n].check, &blocks[n].crc, blocks[n].finish);
+    }
+    else {
+        blocks[n].res = LZMA2_decodeToDic(blocks[n].dec, blocks[n].unpackSize, blocks[n].src, &srcLen, blocks[n].finish);
+    }
 
     /* If no error occurred, store into res the dic_pos value, which is the end of the decompressed data in the buffer */
     if (!UF2_isError(blocks[n].res))
@@ -253,6 +272,8 @@ static size_t UF2_decompressCtxBlocksMt(UF2_DCtx* const dctx, const BYTE *const 
     blocks[0].packPos = 0;
     blocks[0].unpackPos = 0;
     blocks[0].src = src;
+    for (size_t thread = 0; thread < nbThreads; ++thread)
+        blocks[thread].check = dctx->xzCheck;
 
     BYTE const prop = dctx->lzma2prop & UF2_LZMA_PROP_MASK;
 
@@ -279,6 +300,11 @@ static size_t UF2_decompressCtxBlocksMt(UF2_DCtx* const dctx, const BYTE *const 
         if (UF2_isError(blocks[thread].res))
             return blocks[thread].res;
         dSize += blocks[thread].res;
+        /* the parts in order: the check of everything so far, then this part */
+        if (dctx->xzCheck == XZ_CHECK_CRC32)
+            dctx->xzCrc = XZ_crc32Combine((U32)dctx->xzCrc, (U32)blocks[thread].crc, blocks[thread].res);
+        else if (dctx->xzCheck == XZ_CHECK_CRC64)
+            dctx->xzCrc = XZ_crc64Combine(dctx->xzCrc, blocks[thread].crc, blocks[thread].res);
     }
     return dSize;
 }
@@ -523,12 +549,12 @@ static size_t XZ_compareCheck(unsigned check, const BYTE* field, U64 crc)
  * 0.8% (E5-2697A v4, averages of three runs that overlap). Returns what
  * LZMA2_decodeToDic() returns for the block as a whole: the steps before the last
  * stop at their limit with LZMA_FINISH_ANY, and the last one, which reaches
- * dicLimit, uses LZMA_FINISH_END as a single call would. *srcLen is the input
+ * dicLimit, uses lastFinish as a single call would. *srcLen is the input
  * available on entry and the input used on return. */
 #define XZ_CHECK_STEP ((size_t)1 << 18)
 
 static size_t XZ_decodeChecked(LZMA2_DCtx* dec, size_t dicLimit, const BYTE* src, size_t* srcLen,
-    unsigned check, U64* crc)
+    unsigned check, U64* crc, LZMA2_finishMode lastFinish)
 {
     size_t const avail = *srcLen;
     size_t used = 0;
@@ -537,7 +563,7 @@ static size_t XZ_decodeChecked(LZMA2_DCtx* dec, size_t dicLimit, const BYTE* src
         size_t const from = dec->dic_pos;
         size_t const limit = (dicLimit - from > XZ_CHECK_STEP) ? from + XZ_CHECK_STEP : dicLimit;
         size_t len = avail - used;
-        res = LZMA2_decodeToDic(dec, limit, src + used, &len, limit == dicLimit ? LZMA_FINISH_END : LZMA_FINISH_ANY);
+        res = LZMA2_decodeToDic(dec, limit, src + used, &len, limit == dicLimit ? lastFinish : LZMA_FINISH_ANY);
         used += len;
         XZ_updateCheck(check, crc, dec->dic + from, dec->dic_pos - from);
         if (UF2_isError(res) || res != LZMA_STATUS_OUTPUT_FULL || limit == dicLimit)
@@ -597,7 +623,7 @@ static void UF2_decompressXzBlocks(void* const opaque, ptrdiff_t const n)
         size_t res = LZMA2_initDecoder(dec, job->prop, job->dst, job->uSize);
         if (!UF2_isError(res)) {
             size_t used = job->cSize;
-            res = XZ_decodeChecked(dec, job->uSize, job->src, &used, mt->check, &crc);
+            res = XZ_decodeChecked(dec, job->uSize, job->src, &used, mt->check, &crc, LZMA_FINISH_END);
             /* the block must end exactly where both of its header's sizes say */
             if (!UF2_isError(res)
                 && (res != LZMA_STATUS_FINISHED || used != job->cSize || dec->dic_pos != job->uSize))
@@ -798,8 +824,14 @@ static size_t UF2_decompressXzStream(UF2_DCtx* dctx,
         int checked = 0;
 #ifndef UF2_SINGLETHREAD
         if (dctx->blocks != NULL) {
-            /* the multi-threaded decoder splits the block at its dictionary resets */
+            /* the multi-threaded decoder splits the block at its dictionary resets,
+             * and runs the check over each part as it decodes it */
+            dctx->xzCheck = check;
+            dctx->xzCrc = 0;
             dSize = UF2_decompressLzma2(dctx, h.prop, out + op, outCapacity - op, in + d, avail, &used);
+            crc = dctx->xzCrc;
+            checked = 1;
+            dctx->xzCheck = XZ_CHECK_NONE;
         }
         else
 #endif
@@ -807,7 +839,7 @@ static size_t UF2_decompressXzStream(UF2_DCtx* dctx,
             dSize = LZMA2_initDecoder(&dctx->dec, h.prop, out + op, outCapacity - op);
             if (!UF2_isError(dSize)) {
                 used = avail;
-                dSize = XZ_decodeChecked(&dctx->dec, outCapacity - op, in + d, &used, check, &crc);
+                dSize = XZ_decodeChecked(&dctx->dec, outCapacity - op, in + d, &used, check, &crc, LZMA_FINISH_END);
                 if (dSize == LZMA_STATUS_NEEDS_MORE_INPUT)
                     dSize = UF2_ERROR(srcSize_wrong);   /* all input is in memory */
                 else if (!UF2_isError(dSize))

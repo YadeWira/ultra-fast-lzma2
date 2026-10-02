@@ -493,6 +493,30 @@ int main(int argc, char **argv)
             }
         }
     }
+    /* one block with dictionary resets inside it (level 1 has a 1 MiB dictionary;
+     * a reset after every dictionary, and an 8 MiB block): the multi-threaded
+     * decoder splits it at the resets and runs the check over each part */
+    for (int k = 0; k < 3; ++k) {
+        char name[80];
+        snprintf(name, sizeof(name), "one-shot one block with resets inside, check %u", checks[k]);
+        buffer c;
+        size_t const cap = UF2_compressBound(input.size);
+        c.data = malloc(cap);
+        UF2_CCtx *const cctx = UF2_createCCtxMt(2);
+        UF2_CCtx_setParameter(cctx, UF2_p_compressionLevel, 1);
+        UF2_CCtx_setParameter(cctx, UF2_p_resetInterval, 1);
+        UF2_CCtx_setParameter(cctx, UF2_p_format, UF2_format_xz);
+        UF2_CCtx_setParameter(cctx, UF2_p_xzCheck, checks[k]);
+        UF2_CCtx_setParameter(cctx, UF2_p_xzBlockSize, (size_t)8 << 20);
+        c.size = UF2_compressCCtx(cctx, c.data, cap, input.data, input.size, 0);
+        UF2_freeCCtx(cctx);
+        ++cases;
+        if (UF2_isError(c.size))
+            FAIL("%s: %s", name, UF2_getErrorName(c.size));
+        else
+            checkDecode(name, c, input, EXPECT_OK, 0);
+        free(c.data);
+    }
     {
         buffer c = compressXz(empty, 6, 4, 0, 1, 0);
         ++cases;

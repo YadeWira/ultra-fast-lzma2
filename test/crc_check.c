@@ -14,7 +14,8 @@
  * XZ_crc64Portable() are always the tables. They must agree on every length from
  * 0 to 1100 bytes at every alignment, from random starting values, when a buffer
  * is split in two and continued, and on large buffers; and both must give the
- * standard check values. These are internal functions, so this links the static
+ * standard check values; and XZ_crc32Combine() / XZ_crc64Combine() must give the
+ * CRC of a buffer from those of its two parts. These are internal functions, so this links the static
  * library. Exits nonzero on any failure. */
 
 #include <stdio.h>
@@ -84,6 +85,23 @@ int main(void)
         if (XZ_crc64(XZ_crc64(init, p, cut), p + cut, n - cut) != XZ_crc64Portable(init, p, n))
             FAIL("CRC64 of %zu bytes split at %zu", n, cut);
     }
+
+    /* combining: the CRC of a buffer from the CRCs of its two halves */
+    for (int i = 0; i < 2000; ++i) {
+        size_t const n = (size_t)(rng() % 20000);
+        size_t const cut = n ? (size_t)(rng() % (n + 1)) : 0;
+        const BYTE *const p = buf + (rng() & 15);
+        cases += 2;
+        if (XZ_crc32Combine(XZ_crc32(0, p, cut), XZ_crc32(0, p + cut, n - cut), n - cut) != XZ_crc32(0, p, n))
+            FAIL("CRC32 combine of %zu bytes split at %zu", n, cut);
+        if (XZ_crc64Combine(XZ_crc64(0, p, cut), XZ_crc64(0, p + cut, n - cut), n - cut) != XZ_crc64(0, p, n))
+            FAIL("CRC64 combine of %zu bytes split at %zu", n, cut);
+    }
+    cases += 2;
+    if (XZ_crc32Combine(XZ_crc32(0, buf, big / 2), XZ_crc32(0, buf + big / 2, big - big / 2), big - big / 2) != XZ_crc32(0, buf, big))
+        FAIL("CRC32 combine of %zu bytes", big);
+    if (XZ_crc64Combine(XZ_crc64(0, buf, big / 3), XZ_crc64(0, buf + big / 3, big - big / 3), big - big / 3) != XZ_crc64(0, buf, big))
+        FAIL("CRC64 combine of %zu bytes", big);
 
     /* large buffers */
     for (size_t k = 0; k < 8; ++k)

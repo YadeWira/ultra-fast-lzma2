@@ -272,6 +272,49 @@ U64 XZ_crc64(U64 crc, const void *buf, size_t size)
     return ~XZ_crc64Tables(reg, p, size);
 }
 
+/* ---- combining: the CRC of A||B from the CRCs of A and B ----
+ * As zlib's crc32_combine: crc(A||B) = crc(A) * x^(8*|B|) mod P, xor crc(B), on the
+ * finished values, which holds for both CRCs since each starts from and ends with
+ * an inversion. Products are taken on reflected values, whose top bit is x^0. */
+static U64 XZ_mulModP(U64 a, U64 b, U64 poly, U64 top)
+{
+    U64 m = top, p = 0;
+    if (a == 0)
+        return 0;
+    for (;;) {
+        if (a & m) {
+            p ^= b;
+            if ((a & (m - 1)) == 0)
+                break;
+        }
+        m >>= 1;
+        b = (b & 1) ? (b >> 1) ^ poly : b >> 1;
+    }
+    return p;
+}
+
+static U64 XZ_combine(U64 crc1, U64 crc2, U64 len2, U64 poly, U64 top)
+{
+    U64 r = top;            /* x^0 */
+    U64 sq = top >> 1;      /* x^1, squared up to x^(2^k) */
+    for (U64 n = len2 * 8; n != 0; n >>= 1) {
+        if (n & 1)
+            r = XZ_mulModP(r, sq, poly, top);
+        sq = XZ_mulModP(sq, sq, poly, top);
+    }
+    return XZ_mulModP(r, crc1, poly, top) ^ crc2;
+}
+
+U32 XZ_crc32Combine(U32 crc1, U32 crc2, U64 len2)
+{
+    return (U32)XZ_combine(crc1, crc2, len2, 0xEDB88320, (U64)1 << 31);
+}
+
+U64 XZ_crc64Combine(U64 crc1, U64 crc2, U64 len2)
+{
+    return XZ_combine(crc1, crc2, len2, 0xC96C5795D7870F42ULL, (U64)1 << 63);
+}
+
 int XZ_checkSize(unsigned check)
 {
     if (check > 15)
