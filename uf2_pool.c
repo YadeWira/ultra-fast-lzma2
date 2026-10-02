@@ -173,8 +173,13 @@ void UF2POOL_add(void* ctxVoid, UF2POOL_function function, void *opaque, ptrdiff
 int UF2POOL_waitAll(void *ctxVoid, unsigned timeout)
 {
     UF2POOL_ctx* const ctx = (UF2POOL_ctx*)ctxVoid;
-    if (!ctx || (!ctx->numThreadsBusy && ctx->queueIndex >= ctx->queueEnd) || ctx->shutdown) { return 0; }
+    if (!ctx)
+        return 0;
 
+    /* Everything is read under the lock. A check without it, which this function
+     * used to make first, could see a worker take the last job from the queue
+     * before seeing that worker become busy, and return while the job still ran:
+     * the caller then read results and buffers the job was writing. */
     UF2_pthread_mutex_lock(&ctx->queueMutex);
     /* Need to test for ctx->queueIndex < ctx->queueEnd in case not all jobs have started */
     if (timeout != 0) {
@@ -185,8 +190,10 @@ int UF2POOL_waitAll(void *ctxVoid, unsigned timeout)
         while ((ctx->numThreadsBusy || ctx->queueIndex < ctx->queueEnd) && !ctx->shutdown)
             UF2_pthread_cond_wait(&ctx->busyCond, &ctx->queueMutex);
     }
+    /* still busy: a job is running or one has not started yet (only after a timeout) */
+    int const busy = (ctx->numThreadsBusy || ctx->queueIndex < ctx->queueEnd) && !ctx->shutdown;
     UF2_pthread_mutex_unlock(&ctx->queueMutex);
-    return ctx->numThreadsBusy && !ctx->shutdown;
+    return busy;
 }
 
 size_t UF2POOL_threadsBusy(void * ctx)
