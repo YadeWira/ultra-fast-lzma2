@@ -701,12 +701,18 @@ static size_t UF2_compressCCtxNative(UF2_CCtx *cctx,
     BYTE* const end = dstBuf + dstCapacity;
 
     dstBuf += cSize;
-    if(dstBuf >= end)
-        return UF2_ERROR(dstSize_tooSmall);
 
-    if (cSize == 0)
+    /* An empty input has written no property byte yet. Raw LZMA2 (omitProp) has
+     * none at all: it used to get one anyway, so an empty input gave 80 00 with
+     * the default xxhash flag, which no LZMA2 decoder accepts, and one byte more
+     * than the capacity the check above allows. */
+    if (cSize == 0 && !cctx->params.omitProp) {
+        if (dstBuf >= end)
+            return UF2_ERROR(dstSize_tooSmall);
         *dstBuf++ = UF2_getProp(cctx, 0);
-
+    }
+    if (dstBuf >= end)
+        return UF2_ERROR(dstSize_tooSmall);
     *dstBuf++ = LZMA2_END_MARKER;
 
 #ifndef NO_XXHASH
