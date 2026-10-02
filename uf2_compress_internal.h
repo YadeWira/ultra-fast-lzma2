@@ -112,6 +112,7 @@ struct UF2_CCtx_s {
     BYTE endMarked;
     BYTE loopCount;
     BYTE lockParams;
+    BYTE asyncPending;  /* a compression was handed to compressThread and not yet seen done */
     UF2_xzStream xz;
     unsigned jobCount;
     UF2_job jobs[1];

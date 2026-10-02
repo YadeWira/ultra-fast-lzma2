@@ -57,6 +57,11 @@ int UF2POOL_waitAll(void *ctx, unsigned timeout);
 
 size_t UF2POOL_threadsBusy(void *ctx);
 
+/*! UF2POOL_isIdle() :
+    1 if no job is running or queued, checked under the pool's lock, so that the
+    caller may then read what the jobs wrote. */
+int UF2POOL_isIdle(void *ctx);
+
 #if defined (__cplusplus)
 }
 #endif

@@ -196,6 +196,19 @@ int UF2POOL_waitAll(void *ctxVoid, unsigned timeout)
     return busy;
 }
 
+/* Nothing running and nothing queued, read under the lock: a caller that sees 1
+ * may then read whatever the finished jobs wrote. */
+int UF2POOL_isIdle(void *ctxVoid)
+{
+    UF2POOL_ctx* const ctx = (UF2POOL_ctx*)ctxVoid;
+    if (!ctx)
+        return 1;
+    UF2_pthread_mutex_lock(&ctx->queueMutex);
+    int const idle = !ctx->numThreadsBusy && ctx->queueIndex >= ctx->queueEnd;
+    UF2_pthread_mutex_unlock(&ctx->queueMutex);
+    return idle;
+}
+
 size_t UF2POOL_threadsBusy(void * ctx)
 {
     return ((UF2POOL_ctx*)ctx)->numThreadsBusy;
@@ -243,6 +256,12 @@ int UF2POOL_waitAll(void *ctxVoid, unsigned timeout)
     (void)ctxVoid;
     (void)timeout;
     return 0;
+}
+
+int UF2POOL_isIdle(void *ctx)
+{
+    (void)ctx;
+    return 1;
 }
 
 size_t UF2POOL_threadsBusy(void * ctx)

@@ -196,6 +196,17 @@ static inline int UF2_CStream_waitAll(UF2_CStream *fcs)
     return 0;
 }
 
+static inline int UF2_asyncRunning(const UF2_CStream *fcs)
+{
+    (void)fcs;
+    return 0;
+}
+
+static inline size_t UF2_asyncResult(const UF2_CStream *fcs)
+{
+    return fcs->asyncRes;
+}
+
 static inline UF2POOL_ctx *UF2_CCtx_asyncThread(UF2_CCtx *cctx)
 {
     (void)cctx;
@@ -284,7 +295,25 @@ UF2LIB_API size_t UF2LIB_CALL UF2_setCStreamTimeout(UF2_CStream * fcs, unsigned 
 
 static inline int UF2_CStream_waitAll(UF2_CStream *fcs)
 {
-    return UF2POOL_waitAll(fcs->compressThread, fcs->timeout);
+    int const busy = UF2POOL_waitAll(fcs->compressThread, fcs->timeout);
+    if (!busy)
+        fcs->asyncPending = 0;
+    return busy;
+}
+
+/* A compression handed to compressThread is still running. Its results - the
+ * slice sizes, threadCount, the compressed data - are published only by the
+ * pool's lock, so until a wait or this check sees it done they must not be read:
+ * on a weakly ordered processor they could be seen half written. */
+static inline int UF2_asyncRunning(const UF2_CStream *fcs)
+{
+    return fcs->asyncPending && !UF2POOL_isIdle(fcs->compressThread);
+}
+
+/* The result of the last compression, or no error while it still runs */
+static inline size_t UF2_asyncResult(const UF2_CStream *fcs)
+{
+    return UF2_asyncRunning(fcs) ? UF2_error_no_error : fcs->asyncRes;
 }
 
 static inline UF2POOL_ctx *UF2_CCtx_asyncThread(UF2_CCtx *cctx)
@@ -541,11 +570,13 @@ static size_t UF2_compressCurBlock(UF2_CCtx *const cctx, int const streamProp)
     cctx->rmfWeight = rmfWeight;
     cctx->encWeight = encWeight;
 
-    if(UF2_CCtx_asyncThread(cctx) != NULL)
+    if(UF2_CCtx_asyncThread(cctx) != NULL) {
+        cctx->asyncPending = 1;
         UF2POOL_add(UF2_CCtx_asyncThread(cctx), UF2_compressCurBlock_async, cctx, streamProp);
-    else
-        cctx->asyncRes = UF2_compressCurBlock_blocking(cctx, streamProp);
-
+        /* the job writes asyncRes when done; its result is read after a wait */
+        return UF2_error_no_error;
+    }
+    cctx->asyncRes = UF2_compressCurBlock_blocking(cctx, streamProp);
     return cctx->asyncRes;
 }
 
@@ -1327,7 +1358,7 @@ static size_t UF2_xzCloseBlock(UF2_CStream *const fcs, UF2_xzOut *const out)
  * threadCount only once it is done. */
 static size_t UF2_xzAbsorb(UF2_CStream *const fcs)
 {
-    if (!fcs->xz.hold || fcs->outThread >= fcs->threadCount)
+    if (!fcs->xz.hold || UF2_asyncRunning(fcs) || fcs->outThread >= fcs->threadCount)
         return 0;
     if (UF2_CStream_waitAll(fcs) != 0)
         return UF2_ERROR(timedOut);
@@ -1470,7 +1501,7 @@ static size_t UF2_xzEnd(UF2_CStream *const fcs, UF2_xzOut *const out)
 /* Compressed output of any kind waiting to be written */
 static int UF2_hasOutput(const UF2_CStream *fcs)
 {
-    return fcs->outThread < fcs->threadCount
+    return (!UF2_asyncRunning(fcs) && fcs->outThread < fcs->threadCount)
         || UF2_xzPending(&fcs->xz.head) != 0
         || UF2_xzPending(&fcs->xz.tail) != 0;
 }
@@ -1575,6 +1606,9 @@ UF2LIB_API size_t UF2LIB_CALL UF2_copyCStreamOutput(UF2_CStream* fcs, UF2_outBuf
     }
     if (UF2_xzDrain(&fcs->xz.head, output))
         return 1;
+    /* slices of a compression still running are not there yet */
+    if (UF2_asyncRunning(fcs))
+        return 0;
     for (; fcs->outThread < fcs->threadCount; ++fcs->outThread) {
         const BYTE* const outBuf = RMF_getTableAsOutputBuffer(fcs->matchTable, fcs->jobs[fcs->outThread].block.start) + fcs->outPos;
         BYTE* const dstBuf = (BYTE*)output->dst + output->pos;
@@ -1600,7 +1634,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_copyCStreamOutput(UF2_CStream* fcs, UF2_outBuf
 
 static size_t UF2_compressStream_input(UF2_CStream* fcs, UF2_inBuffer* input)
 {
-    CHECK_F(fcs->asyncRes);
+    CHECK_F(UF2_asyncResult(fcs));
 
     DICT_buffer * const buf = &fcs->buf;
 
@@ -1613,21 +1647,22 @@ static size_t UF2_compressStream_input(UF2_CStream* fcs, UF2_inBuffer* input)
             DICT_shift(buf);
         }
         
-        CHECK_F(fcs->asyncRes);
+        CHECK_F(UF2_asyncResult(fcs));
 
         DICT_put(buf, input);
         
         if (!DICT_availSpace(buf)) {
             /* held slices do not wait for the caller */
             CHECK_F(UF2_xzAbsorb(fcs));
-            /* break if the compressor is not available */
-            if (fcs->outThread < fcs->threadCount)
+            /* break if the compressor is not available; one still running is
+             * waited for by UF2_compressStream_internal() */
+            if (!UF2_asyncRunning(fcs) && fcs->outThread < fcs->threadCount)
                 break;
 
             CHECK_F(UF2_compressStream_internal(fcs, 0));
         }
 
-        CHECK_F(fcs->asyncRes);
+        CHECK_F(UF2_asyncResult(fcs));
     }
 
     return UF2_error_no_error;
@@ -1674,7 +1709,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_getDictionaryBuffer(UF2_CStream * fcs, UF2_dic
     if (!fcs->lockParams)
         return UF2_ERROR(init_missing);
 
-    CHECK_F(fcs->asyncRes);
+    CHECK_F(UF2_asyncResult(fcs));
 
     DICT_buffer *buf = &fcs->buf;
 
@@ -1755,9 +1790,11 @@ UF2LIB_API void UF2LIB_CALL UF2_cancelCStream(UF2_CStream *fcs)
 
 UF2LIB_API size_t UF2LIB_CALL UF2_remainingOutputSize(const UF2_CStream* fcs)
 {
-    CHECK_F(fcs->asyncRes);
+    CHECK_F(UF2_asyncResult(fcs));
 
     size_t cSize = UF2_xzPending(&fcs->xz.head) + UF2_xzPending(&fcs->xz.tail);
+    if (UF2_asyncRunning(fcs))
+        return cSize;
     for (size_t u = fcs->outThread; u < fcs->threadCount; ++u)
         cSize += fcs->jobs[u].cSize;
 
@@ -1822,7 +1859,7 @@ static size_t UF2_writeEnd(UF2_CStream* const fcs)
 
 static size_t UF2_flushStream_internal(UF2_CStream* fcs, int const ending)
 {
-    CHECK_F(fcs->asyncRes);
+    CHECK_F(UF2_asyncResult(fcs));
 
     DEBUGLOG(4, "UF2_flushStream_internal : %u to compress, %u to write",
         (U32)(fcs->buf.end - fcs->buf.start),
