@@ -652,6 +652,11 @@ static size_t UF2_compressBuffer(UF2_CCtx *const cctx,
             dstCapacity -= cctx->jobs[u].cSize;
         }
         srcSize -= cctx->curBlock.end - cctx->curBlock.start;
+        /* Nothing left: stop before setting up a next block. Below, the overlap can
+         * exceed what remains of a small input, and stepping data past the input
+         * would be undefined even though it is never read. */
+        if (srcSize == 0)
+            break;
         if (cctx->params.cParams.reset_interval
             && blockTotal + MIN(dictionarySize - blockOverlap, srcSize) > dictionarySize * cctx->params.cParams.reset_interval) {
             /* periodically reset the dictionary for mt decompression */
