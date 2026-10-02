@@ -577,7 +577,7 @@ static size_t XZ_addRecord(XZ_record** records, size_t* nRecords, size_t* capRec
 {
     if (*nRecords == *capRecords) {
         size_t const newCap = *capRecords ? *capRecords * 2 : 16;
-        XZ_record *const r = realloc(*records, newCap * sizeof(XZ_record));
+        XZ_record *const r = UF2_realloc(*records, *nRecords * sizeof(XZ_record), newCap * sizeof(XZ_record));
         if (r == NULL)
             return UF2_ERROR(memory_allocation);
         *records = r;
@@ -693,7 +693,7 @@ static size_t UF2_decompressXzBlocksMt(UF2_DCtx* dctx,
 
         if (nJobs == capJobs) {
             size_t const newCap = capJobs ? capJobs * 2 : 16;
-            XZ_blockJob *const j = realloc(jobs, newCap * sizeof(XZ_blockJob));
+            XZ_blockJob *const j = UF2_realloc(jobs, nJobs * sizeof(XZ_blockJob), newCap * sizeof(XZ_blockJob));
             if (j == NULL) {
                 res = UF2_ERROR(memory_allocation);
                 goto done;
@@ -746,7 +746,7 @@ static size_t UF2_decompressXzBlocksMt(UF2_DCtx* dctx,
     res = 0;
 
 done:
-    free(jobs);
+    UF2_free(jobs);
     if (res == 1)
         *nRecords = 0;      /* the sequential path starts the records over */
     return res;
@@ -917,11 +917,11 @@ index:
 
         *inConsumed = (size_t)(f + XZ_STREAM_FOOTER_SIZE - in);
     }
-    free(records);
+    UF2_free(records);
     return op;
 
 fail:
-    free(records);
+    UF2_free(records);
     return err;
 #undef XZ_FAIL
 }

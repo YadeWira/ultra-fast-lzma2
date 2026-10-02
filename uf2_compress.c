@@ -372,11 +372,11 @@ UF2LIB_API void UF2LIB_CALL UF2_freeCCtx(UF2_CCtx *cctx)
     UF2_freeCCtx_threads(cctx);
 
     RMF_freeMatchTable(cctx->matchTable);
-    free(cctx->xz.head.data);
-    free(cctx->xz.tail.data);
-    free(cctx->xz.block.data);
-    free(cctx->xz.unpadded);
-    free(cctx->xz.uncompressed);
+    UF2_free(cctx->xz.head.data);
+    UF2_free(cctx->xz.tail.data);
+    UF2_free(cctx->xz.block.data);
+    UF2_free(cctx->xz.unpadded);
+    UF2_free(cctx->xz.uncompressed);
     UF2_free(cctx);
 }
 
@@ -759,7 +759,7 @@ static size_t UF2_compressCCtxXz(UF2_CCtx *cctx,
     if (dstCapacity < XZ_STREAM_HEADER_SIZE + tail)
         return UF2_ERROR(dstSize_tooSmall);
 
-    U64 *const sizes = nBlocks ? malloc(2 * nBlocks * sizeof(U64)) : NULL;
+    U64 *const sizes = nBlocks ? UF2_malloc(2 * nBlocks * sizeof(U64)) : NULL;
     if (nBlocks && sizes == NULL)
         return UF2_ERROR(memory_allocation);
     U64 *const unpadded = sizes;
@@ -821,7 +821,7 @@ static size_t UF2_compressCCtxXz(UF2_CCtx *cctx,
         XZ_writeStreamFooter(out + pos, indexSize, check);
         res = pos + XZ_STREAM_FOOTER_SIZE;
     }
-    free(sizes);
+    UF2_free(sizes);
     return res;
 }
 
@@ -851,7 +851,7 @@ static size_t UF2_compressSearch(UF2_CCtx *cctx,
 {
     UF2_lzma2Parameters *const cParams = &cctx->params.cParams;
     unsigned const lc = cParams->lc, lp = cParams->lp, pb = cParams->pb;
-    BYTE *const scratch = malloc(dstCapacity);
+    BYTE *const scratch = UF2_malloc(dstCapacity);
     if (scratch == NULL)
         return UF2_ERROR(memory_allocation);
 
@@ -887,7 +887,7 @@ static size_t UF2_compressSearch(UF2_CCtx *cctx,
     cParams->pb = pb;
     if (!UF2_isError(best) && bestBuf != (BYTE*)dst)
         memcpy(dst, bestBuf, best);
-    free(scratch);
+    UF2_free(scratch);
     return best;
 }
 
@@ -1228,7 +1228,7 @@ static BYTE *UF2_xzReserve(UF2_xzOut *const b, size_t const n)
     }
     if (b->cap - b->len < n) {
         size_t const newCap = MAX(b->len + n, b->cap * 2);
-        BYTE *const d = realloc(b->data, newCap);
+        BYTE *const d = UF2_realloc(b->data, b->len, newCap);
         if (d == NULL)
             return NULL;
         b->data = d;
@@ -1270,11 +1270,11 @@ static size_t UF2_xzAddRecord(UF2_xzStream *const xz, U64 const unpadded, U64 co
 {
     if (xz->records == xz->recordCap) {
         size_t const newCap = xz->recordCap ? xz->recordCap * 2 : 16;
-        U64 *const a = realloc(xz->unpadded, newCap * sizeof(U64));
+        U64 *const a = UF2_realloc(xz->unpadded, xz->records * sizeof(U64), newCap * sizeof(U64));
         if (a == NULL)
             return UF2_ERROR(memory_allocation);
         xz->unpadded = a;
-        U64 *const b = realloc(xz->uncompressed, newCap * sizeof(U64));
+        U64 *const b = UF2_realloc(xz->uncompressed, xz->records * sizeof(U64), newCap * sizeof(U64));
         if (b == NULL)
             return UF2_ERROR(memory_allocation);
         xz->uncompressed = b;

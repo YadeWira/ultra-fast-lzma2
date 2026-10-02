@@ -59,10 +59,30 @@ void *UF2_calloc(size_t count, size_t size)
 void UF2_free(void *address)
 {
     DEBUGLOG(3, "UF2_free: 0x%lX", (long)((char*)address - (char*)0));
+    /* a custom deallocator need not accept NULL */
+    if (address == NULL)
+        return;
     if (UF2_g_free != NULL)
         UF2_g_free(address);
     else
         free(address);
+}
+
+/* realloc() through the allocator set with UF2_setAllocator(), which has no
+ * realloc of its own: a new block, the old contents copied, the old block freed.
+ * On failure the old block is left as it was, as realloc() leaves it. */
+void *UF2_realloc(void *address, size_t oldSize, size_t newSize)
+{
+    if (UF2_g_alloc == NULL) {
+        UF2_g_alloc_called = 1;
+        return realloc(address, newSize);
+    }
+    void *const block = UF2_malloc(newSize);
+    if (block != NULL && address != NULL) {
+        memcpy(block, address, oldSize < newSize ? oldSize : newSize);
+        UF2_free(address);
+    }
+    return block;
 }
 
 void *UF2_large_malloc(size_t size)

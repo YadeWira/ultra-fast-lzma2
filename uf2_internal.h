@@ -31,6 +31,7 @@ extern "C" {
 void *UF2_malloc(size_t size);
 void *UF2_calloc(size_t count, size_t size);
 void UF2_free(void *address);
+void *UF2_realloc(void *address, size_t oldSize, size_t newSize);
 void *UF2_large_malloc(size_t size);
 void UF2_large_free(void *address);
 
