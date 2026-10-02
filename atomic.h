@@ -40,6 +40,7 @@ typedef LONG volatile UF2_atomic;
 #define ATOMIC_INITIAL_VALUE -1
 #define UF2_atomic_increment(n) InterlockedIncrement(&n)
 #define UF2_atomic_add(n, a) InterlockedAdd(&n, a)
+#define UF2_atomic_load(n) (n)     /* volatile */
 #define UF2_nonAtomic_increment(n) (++n)
 
 #elif !defined(UF2_SINGLETHREAD) && defined(__GNUC__)
@@ -48,6 +49,7 @@ typedef long UF2_atomic;
 #define ATOMIC_INITIAL_VALUE 0
 #define UF2_atomic_increment(n) __sync_fetch_and_add(&n, 1)
 #define UF2_atomic_add(n, a) __sync_fetch_and_add(&n, a)
+#define UF2_atomic_load(n) __atomic_load_n(&n, __ATOMIC_RELAXED)
 #define UF2_nonAtomic_increment(n) (n++)
 
 #elif !defined(UF2_SINGLETHREAD) && defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L) && !defined(__STDC_NO_ATOMICS__) /* C11 */
@@ -58,6 +60,7 @@ typedef _Atomic long UF2_atomic;
 #define ATOMIC_INITIAL_VALUE 0
 #define UF2_atomic_increment(n) atomic_fetch_add(&n, 1)
 #define UF2_atomic_add(n, a) atomic_fetch_add(&n, a)
+#define UF2_atomic_load(n) atomic_load_explicit(&n, memory_order_relaxed)
 #define UF2_nonAtomic_increment(n) (n++)
 
 #else  /* No atomics */
@@ -70,6 +73,7 @@ typedef long UF2_atomic;
 #define ATOMIC_INITIAL_VALUE 0
 #define UF2_atomic_increment(n) (n++)
 #define UF2_atomic_add(n, a) (n += (a))
+#define UF2_atomic_load(n) (n)
 #define UF2_nonAtomic_increment(n) (n++)
 
 #endif /* UF2_SINGLETHREAD */

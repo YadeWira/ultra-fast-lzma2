@@ -900,7 +900,8 @@ static void RMF_recurseListsReference(RMF_builder* const tbl,
 /* Atomically take a list from the head table */
 static ptrdiff_t RMF_getNextList_mt(UF2_matchTable* const tbl)
 {
-    if (tbl->st_index < tbl->end_index) {
+    /* a relaxed load: the increment below decides, this only avoids it when done */
+    if (UF2_atomic_load(tbl->st_index) < tbl->end_index) {
         long pos = UF2_atomic_increment(tbl->st_index);
         if (pos < tbl->end_index)
             return pos;
