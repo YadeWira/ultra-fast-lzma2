@@ -2253,6 +2253,7 @@ static size_t UF2_decompressStream_blocking(UF2_DStream* fds, UF2_outBuffer* out
     }
 }
 
+#ifndef UF2_SINGLETHREAD
 /* UF2_decompressStream_async() : UF2POOL_function type */
 static void UF2_decompressStream_async(void* const jobDescription, ptrdiff_t const n)
 {
@@ -2263,6 +2264,7 @@ static void UF2_decompressStream_async(void* const jobDescription, ptrdiff_t con
 
     (void)n;
 }
+#endif
 
 UF2LIB_API size_t UF2LIB_CALL UF2_decompressStream(UF2_DStream* fds, UF2_outBuffer* output, UF2_inBuffer* input)
 {

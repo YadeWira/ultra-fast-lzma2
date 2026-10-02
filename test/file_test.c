@@ -57,7 +57,7 @@ static int compress_file(UF2_CStream *fcs)
         out_size += out_buf.pos;
         out_buf.pos = 0;
     } while (res);
-    fprintf(stdout, "\t%ld -> %ld\n", in_size, out_size);
+    fprintf(stdout, "\t%lu -> %lu\n", (unsigned long)in_size, (unsigned long)out_size);
     
     return 0;
 
@@ -89,7 +89,7 @@ static int decompress_file(UF2_DStream *fds)
         out_buf.pos = 0;
     } while (res && in_buf.size);
     
-    fprintf(stdout, "\t%ld -> %ld\n", in_size, out_size);
+    fprintf(stdout, "\t%lu -> %lu\n", (unsigned long)in_size, (unsigned long)out_size);
     
     return 0;
 
