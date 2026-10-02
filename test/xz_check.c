@@ -258,8 +258,8 @@ static void append(buffer *b, size_t *cap, const void *p, size_t n)
 
 /* Streamed compression. mode: 's' UF2_compressStream, 'f' the same with a flush
  * every third input, 'z' the zero-copy dictionary functions, 'a' with a timeout. */
-static buffer compressStreamXz(buffer src, char mode, int level, unsigned threads, unsigned check,
-    size_t inChunk, size_t outChunk)
+static buffer compressStreamXzEx(buffer src, char mode, int level, unsigned threads, unsigned check,
+    size_t inChunk, size_t outChunk, int sized, unsigned resetInterval)
 {
     buffer c = { NULL, 0 };
     size_t cap = 0;
@@ -269,8 +269,15 @@ static buffer compressStreamXz(buffer src, char mode, int level, unsigned thread
 
     UF2_CStream_setParameter(cs, UF2_p_format, UF2_format_xz);
     UF2_CStream_setParameter(cs, UF2_p_xzCheck, check);
+    UF2_CStream_setParameter(cs, UF2_p_xzSizedHeaders, (size_t)sized);
     if (mode == 'a')
         UF2_setCStreamTimeout(cs, 1);
+    if (resetInterval) {
+        /* the level sets the reset interval too, so it goes first, and init takes 0 */
+        UF2_CStream_setParameter(cs, UF2_p_compressionLevel, (size_t)level);
+        UF2_CStream_setParameter(cs, UF2_p_resetInterval, resetInterval);
+        level = 0;
+    }
     r = UF2_initCStream(cs, level);
     if (UF2_isError(r))
         goto error;
@@ -366,6 +373,41 @@ done:
     UF2_freeCStream(cs);
     free(tmp);
     return c;
+}
+
+static buffer compressStreamXz(buffer src, char mode, int level, unsigned threads, unsigned check,
+    size_t inChunk, size_t outChunk)
+{
+    return compressStreamXzEx(src, mode, level, threads, check, inChunk, outChunk, 0, 0);
+}
+
+/* Walk the Block Headers of a single-Stream .xz file. Returns the number of
+ * blocks if every header states both sizes, else -1. */
+static int countSizedBlocks(buffer c)
+{
+    static const size_t checkSizes[16] = { 0, 4, 4, 4, 8, 8, 8, 16, 16, 16, 32, 32, 32, 64, 64, 64 };
+    if (c.size < 12)
+        return -1;
+    size_t const checkSize = checkSizes[c.data[7] & 15];
+    size_t p = 12;
+    int blocks = 0;
+    while (p < c.size && c.data[p] != 0) {
+        size_t const headerSize = ((size_t)c.data[p] + 1) * 4;
+        if ((c.data[p + 1] & 0xC0) != 0xC0)
+            return -1;
+        unsigned long long cSize = 0;
+        unsigned shift = 0;
+        size_t q = p + 2;
+        do {
+            cSize |= (unsigned long long)(c.data[q] & 0x7F) << shift;
+            shift += 7;
+        } while (c.data[q++] & 0x80);
+        p += headerSize + (size_t)cSize;
+        p += (4 - (cSize & 3)) & 3;
+        p += checkSize;
+        ++blocks;
+    }
+    return blocks;
 }
 
 /* ---------- mutation ---------- */
@@ -574,6 +616,37 @@ int main(int argc, char **argv)
             checkDecode(name, c, input, EXPECT_OK, 0);
             if (l == 0)
                 writeFile(outDir, modeFiles[m], c);
+            free(c.data);
+        }
+    }
+    /* UF2_p_xzSizedHeaders: blocks held until they end, so that every header states
+     * both sizes; a reset after every 1 MiB dictionary makes several blocks */
+    for (int m = 0; m < 4; ++m) {
+        for (int k = 0; k < 3; ++k) {
+            char name[80];
+            snprintf(name, sizeof(name), "streamed with sizes, mode %c check %u", modes[m], checks[k]);
+            buffer c = compressStreamXzEx(input, modes[m], 1, 2, checks[k], 100000, 7777, 1, 1);
+            ++cases;
+            if (c.data == NULL)
+                continue;
+            int const blocks = countSizedBlocks(c);
+            ++cases;
+            if (blocks < 3)
+                FAIL("%s: %d blocks with both sizes stated, expected at least 3", name, blocks);
+            checkDecode(name, c, input, EXPECT_OK, 0);
+            if (k == 2)
+                writeFile(outDir, m == 0 ? "stream_sized.xz" : m == 1 ? "stream_sized_flush.xz" : m == 2 ? "stream_sized_zerocopy.xz" : "stream_sized_async.xz", c);
+            free(c.data);
+        }
+    }
+    {
+        /* one byte at a time in and out */
+        buffer c = compressStreamXzEx(data, 's', 6, 1, 4, 1, 1, 1, 0);
+        ++cases;
+        if (c.data != NULL) {
+            if (countSizedBlocks(c) != 1)
+                FAIL("streamed with sizes, 1-byte buffers: block header without sizes");
+            checkDecode("streamed with sizes, 1-byte buffers", c, data, EXPECT_OK, 0);
             free(c.data);
         }
     }

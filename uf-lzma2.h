@@ -614,6 +614,14 @@ typedef enum {
                              * Otherwise at least UF2_XZ_BLOCKSIZE_MIN. Smaller blocks decompress on
                              * more threads and compress worse, each one starting a new dictionary.
                              * Streaming compression ignores it: a block starts at each dictionary reset. */
+    UF2_p_xzSizedHeaders,   /* Streaming .xz compression: 1 = hold each block in memory until it ends, so
+                             * that its Block Header can state both sizes and the file decompresses on
+                             * several threads like one-shot output. Costs memory up to one block's
+                             * compressed size (a block is dictionarySize * resetInterval of input;
+                             * lower UF2_p_resetInterval for smaller blocks), and UF2_flushStream()
+                             * writes nothing of the open block. 0 (default) = write each header
+                             * first, without sizes; such a file decompresses on one thread only.
+                             * One-shot .xz always states both sizes and ignores it. */
 #ifdef RMF_REFERENCE
     UF2_p_useReferenceMF    /* Use the reference matchfinder for development purposes. SLOW. */
 #endif

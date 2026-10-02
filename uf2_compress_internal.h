@@ -49,6 +49,7 @@ typedef struct {
     BYTE propSearch;    /* UF2_p_propertySearch, as set by the caller */
     BYTE levelSearch;   /* set by selecting the top level of a table */
     size_t xzBlockSize; /* UF2_p_xzBlockSize; 0 = one block per dictionary reset */
+    BYTE xzSizedHeaders;    /* UF2_p_xzSizedHeaders */
 } UF2_CCtx_params;
 
 typedef struct {
@@ -70,6 +71,8 @@ typedef struct {
 typedef struct {
     UF2_xzOut head;     /* written before the pending compressed slices */
     UF2_xzOut tail;     /* written after them: the end of the file */
+    UF2_xzOut block;    /* with UF2_p_xzSizedHeaders, the open block's data, after
+                         * XZ_BLOCK_HEADER_MAX bytes kept free for its header */
     U64 *unpadded;      /* index records */
     U64 *uncompressed;
     size_t records;
@@ -79,6 +82,7 @@ typedef struct {
     U64 cSize;          /* LZMA2 data of the open block, as far as accounted */
     size_t headerSize;  /* Block Header of the open block */
     BYTE open;          /* a block is open */
+    BYTE hold;          /* blocks are held until they end (UF2_p_xzSizedHeaders) */
     BYTE unaccounted;   /* the last compression's slices are not in cSize yet */
 } UF2_xzStream;
 

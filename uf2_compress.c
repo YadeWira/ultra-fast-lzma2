@@ -321,6 +321,7 @@ static UF2_CCtx *UF2_createCCtx_internal(unsigned nbThreads, int const dualBuffe
     cctx->params.propSearch = 0;
     cctx->params.levelSearch = 0;
     cctx->params.xzBlockSize = 0;
+    cctx->params.xzSizedHeaders = 0;
 
     cctx->matchTable = NULL;
     DICT_construct(&cctx->buf, dualBuffer);
@@ -373,6 +374,7 @@ UF2LIB_API void UF2LIB_CALL UF2_freeCCtx(UF2_CCtx *cctx)
     RMF_freeMatchTable(cctx->matchTable);
     free(cctx->xz.head.data);
     free(cctx->xz.tail.data);
+    free(cctx->xz.block.data);
     free(cctx->xz.unpadded);
     free(cctx->xz.uncompressed);
     UF2_free(cctx);
@@ -1072,6 +1074,10 @@ UF2LIB_API size_t UF2LIB_CALL UF2_CCtx_setParameter(UF2_CCtx *cctx, UF2_cParamet
             return UF2_ERROR(parameter_outOfBound);
         cctx->params.xzBlockSize = value;
         break;
+
+    case UF2_p_xzSizedHeaders:
+        cctx->params.xzSizedHeaders = value != 0;
+        break;
 #ifdef RMF_REFERENCE
     case UF2_p_useReferenceMF:
         cctx->params.rParams.use_ref_mf = value != 0;
@@ -1157,6 +1163,9 @@ UF2LIB_API size_t UF2LIB_CALL UF2_CCtx_getParameter(UF2_CCtx *cctx, UF2_cParamet
 
     case UF2_p_xzBlockSize:
         return cctx->params.xzBlockSize;
+
+    case UF2_p_xzSizedHeaders:
+        return cctx->params.xzSizedHeaders;
 #ifdef RMF_REFERENCE
     case UF2_p_useReferenceMF:
         return cctx->params.rParams.use_ref_mf;
@@ -1196,7 +1205,9 @@ UF2LIB_API void UF2LIB_CALL UF2_freeCStream(UF2_CStream * fcs)
  * slices and one after them. A block starts wherever the dictionary is reset,
  * as in the one-shot writer. Its header has to go out before its data, when
  * neither of its sizes is known yet, so it omits them, as xz does when
- * compressing on one thread. */
+ * compressing on one thread; or, with UF2_p_xzSizedHeaders, the block's
+ * compressed data is held until the block ends and its header can state both
+ * sizes, which lets the file decompress on several threads. */
 
 static int UF2_isXzStream(const UF2_CStream *fcs)
 {
@@ -1249,6 +1260,27 @@ static void UF2_xzAccount(UF2_CStream *const fcs)
     }
 }
 
+/* The index record of a block just ended */
+static size_t UF2_xzAddRecord(UF2_xzStream *const xz, U64 const unpadded, U64 const uncompressed)
+{
+    if (xz->records == xz->recordCap) {
+        size_t const newCap = xz->recordCap ? xz->recordCap * 2 : 16;
+        U64 *const a = realloc(xz->unpadded, newCap * sizeof(U64));
+        if (a == NULL)
+            return UF2_ERROR(memory_allocation);
+        xz->unpadded = a;
+        U64 *const b = realloc(xz->uncompressed, newCap * sizeof(U64));
+        if (b == NULL)
+            return UF2_ERROR(memory_allocation);
+        xz->uncompressed = b;
+        xz->recordCap = newCap;
+    }
+    xz->unpadded[xz->records] = unpadded;
+    xz->uncompressed[xz->records] = uncompressed;
+    ++xz->records;
+    return 0;
+}
+
 /* End the open block: end marker, Block Padding, check, index record */
 static size_t UF2_xzCloseBlock(UF2_CStream *const fcs, UF2_xzOut *const out)
 {
@@ -1273,21 +1305,87 @@ static size_t UF2_xzCloseBlock(UF2_CStream *const fcs, UF2_xzOut *const out)
     n += checkSize;
     out->len += n;
 
-    if (xz->records == xz->recordCap) {
-        size_t const newCap = xz->recordCap ? xz->recordCap * 2 : 16;
-        U64 *const a = realloc(xz->unpadded, newCap * sizeof(U64));
-        if (a == NULL)
+    CHECK_F(UF2_xzAddRecord(xz, xz->headerSize + xz->cSize + checkSize, xz->uSize));
+    xz->open = 0;
+    return 0;
+}
+
+/* With UF2_p_xzSizedHeaders: move the held slices of the last compression into
+ * the open block. Nothing is pending while a compression runs, since it sets
+ * threadCount only once it is done. */
+static size_t UF2_xzAbsorb(UF2_CStream *const fcs)
+{
+    if (!fcs->xz.hold || fcs->outThread >= fcs->threadCount)
+        return 0;
+    if (UF2_CStream_waitAll(fcs) != 0)
+        return UF2_ERROR(timedOut);
+    CHECK_F(fcs->asyncRes);
+    UF2_xzOut *const b = &fcs->xz.block;
+    for (; fcs->outThread < fcs->threadCount; ++fcs->outThread) {
+        const BYTE *const src = RMF_getTableAsOutputBuffer(fcs->matchTable, fcs->jobs[fcs->outThread].block.start) + fcs->outPos;
+        size_t const n = fcs->jobs[fcs->outThread].cSize - fcs->outPos;
+        BYTE *const p = UF2_xzReserve(b, n);
+        if (p == NULL)
             return UF2_ERROR(memory_allocation);
-        xz->unpadded = a;
-        U64 *const b = realloc(xz->uncompressed, newCap * sizeof(U64));
-        if (b == NULL)
-            return UF2_ERROR(memory_allocation);
-        xz->uncompressed = b;
-        xz->recordCap = newCap;
+        memcpy(p, src, n);
+        b->len += n;
+        fcs->outPos = 0;
     }
-    xz->unpadded[xz->records] = xz->headerSize + xz->cSize + checkSize;
-    xz->uncompressed[xz->records] = xz->uSize;
-    ++xz->records;
+    fcs->xz.unaccounted = 0;
+    return 0;
+}
+
+/* End a held block: now that both sizes are known, its header goes into the room
+ * kept before its data, the end marker, Block Padding and check after it, and the
+ * whole block joins the output - by swapping buffers when nothing else is queued. */
+static size_t UF2_xzCloseHeldBlock(UF2_CStream *const fcs)
+{
+    unsigned const check = fcs->params.xzCheck;
+    size_t const checkSize = (size_t)XZ_checkSize(check);
+    UF2_xzStream *const xz = &fcs->xz;
+    UF2_xzOut *const b = &xz->block;
+
+    CHECK_F(UF2_xzAbsorb(fcs));
+    U64 const cSize = (U64)(b->len - XZ_BLOCK_HEADER_MAX) + 1;     /* with the end marker */
+    /* the dictionary a block uses cannot exceed the block */
+    size_t const dictSize = (size_t)MIN((U64)fcs->params.rParams.dictionary_size, xz->uSize);
+    BYTE header[XZ_BLOCK_HEADER_MAX];
+    size_t const headerSize = XZ_writeBlockHeader(header, cSize, xz->uSize, LZMA2_getDictSizeProp(dictSize));
+
+    BYTE *const p = UF2_xzReserve(b, 1 + 3 + checkSize);
+    if (p == NULL)
+        return UF2_ERROR(memory_allocation);
+    size_t n = 0;
+    p[n++] = LZMA2_END_MARKER;
+    size_t const padding = (size_t)((4 - (cSize & 3)) & 3);
+    memset(p + n, 0, padding);
+    n += padding;
+    if (check == XZ_CHECK_CRC32)
+        MEM_writeLE32(p + n, (U32)xz->check);
+    else if (check == XZ_CHECK_CRC64)
+        MEM_writeLE64(p + n, xz->check);
+    n += checkSize;
+    b->len += n;
+    memcpy(b->data + XZ_BLOCK_HEADER_MAX - headerSize, header, headerSize);
+    b->pos = XZ_BLOCK_HEADER_MAX - headerSize;
+
+    if (UF2_xzPending(&xz->head) == 0) {
+        UF2_xzOut const t = xz->head;
+        xz->head = *b;
+        *b = t;
+    }
+    else {
+        size_t const size = UF2_xzPending(b);
+        BYTE *const q = UF2_xzReserve(&xz->head, size);
+        if (q == NULL)
+            return UF2_ERROR(memory_allocation);
+        memcpy(q, b->data + b->pos, size);
+        xz->head.len += size;
+    }
+    b->pos = 0;
+    b->len = 0;
+
+    CHECK_F(UF2_xzAddRecord(xz, headerSize + cSize + checkSize, xz->uSize));
     xz->open = 0;
     return 0;
 }
@@ -1296,11 +1394,20 @@ static size_t UF2_xzCloseBlock(UF2_CStream *const fcs, UF2_xzOut *const out)
 static size_t UF2_xzOpenBlock(UF2_CStream *const fcs, size_t const dictSize)
 {
     UF2_xzStream *const xz = &fcs->xz;
-    BYTE *const p = UF2_xzReserve(&xz->head, XZ_BLOCK_HEADER_MAX);
-    if (p == NULL)
-        return UF2_ERROR(memory_allocation);
-    xz->headerSize = XZ_writeBlockHeader(p, XZ_SIZE_UNKNOWN, XZ_SIZE_UNKNOWN, LZMA2_getDictSizeProp(dictSize));
-    xz->head.len += xz->headerSize;
+    if (xz->hold) {
+        /* the header waits for the block's end; keep room for it */
+        if (UF2_xzReserve(&xz->block, XZ_BLOCK_HEADER_MAX) == NULL)
+            return UF2_ERROR(memory_allocation);
+        xz->block.len += XZ_BLOCK_HEADER_MAX;
+        (void)dictSize;
+    }
+    else {
+        BYTE *const p = UF2_xzReserve(&xz->head, XZ_BLOCK_HEADER_MAX);
+        if (p == NULL)
+            return UF2_ERROR(memory_allocation);
+        xz->headerSize = XZ_writeBlockHeader(p, XZ_SIZE_UNKNOWN, XZ_SIZE_UNKNOWN, LZMA2_getDictSizeProp(dictSize));
+        xz->head.len += xz->headerSize;
+    }
     xz->check = 0;
     xz->uSize = 0;
     xz->cSize = 0;
@@ -1318,7 +1425,7 @@ static size_t UF2_xzBeginCompression(UF2_CStream *const fcs, int const ending)
     /* No overlap means a dictionary reset, and every block begins with one */
     if (block->start == 0) {
         if (xz->open)
-            CHECK_F(UF2_xzCloseBlock(fcs, &xz->head));
+            CHECK_F(xz->hold ? UF2_xzCloseHeldBlock(fcs) : UF2_xzCloseBlock(fcs, &xz->head));
         /* When ending, this dictionary block holds all that is left of the input,
          * so the block needs no more dictionary than that. */
         CHECK_F(UF2_xzOpenBlock(fcs, ending ? block->end : fcs->params.rParams.dictionary_size));
@@ -1338,7 +1445,7 @@ static size_t UF2_xzEnd(UF2_CStream *const fcs, UF2_xzOut *const out)
 {
     UF2_xzStream *const xz = &fcs->xz;
     if (xz->open)
-        CHECK_F(UF2_xzCloseBlock(fcs, out));
+        CHECK_F(xz->hold ? UF2_xzCloseHeldBlock(fcs) : UF2_xzCloseBlock(fcs, out));
     BYTE *const p = UF2_xzReserve(out, XZ_INDEX_MAX(xz->records) + XZ_STREAM_FOOTER_SIZE);
     if (p == NULL)
         return UF2_ERROR(memory_allocation);
@@ -1390,9 +1497,11 @@ UF2LIB_API size_t UF2LIB_CALL UF2_initCStream(UF2_CStream* fcs, int compressionL
     UF2_xzStream *const xz = &fcs->xz;
     xz->head.len = xz->head.pos = 0;
     xz->tail.len = xz->tail.pos = 0;
+    xz->block.len = xz->block.pos = 0;
     xz->records = 0;
     xz->open = 0;
     xz->unaccounted = 0;
+    xz->hold = UF2_isXzStream(fcs) && fcs->params.xzSizedHeaders;
     if (UF2_isXzStream(fcs)) {
         BYTE *const p = UF2_xzReserve(&xz->head, XZ_STREAM_HEADER_SIZE);
         if (p == NULL)
@@ -1407,6 +1516,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_initCStream(UF2_CStream* fcs, int compressionL
 static size_t UF2_compressStream_internal(UF2_CStream* const fcs, int const ending)
 {
     CHECK_F(UF2_waitCStream(fcs));
+    CHECK_F(UF2_xzAbsorb(fcs));
 
     DICT_buffer *const buf = &fcs->buf;
 
@@ -1443,6 +1553,14 @@ static size_t UF2_compressStream_internal(UF2_CStream* const fcs, int const endi
  */
 UF2LIB_API size_t UF2LIB_CALL UF2_copyCStreamOutput(UF2_CStream* fcs, UF2_outBuffer *output)
 {
+    if (fcs->xz.hold) {
+        /* held slices go into the open block, never straight to the output; an
+         * absorb that cannot finish now, timed out, is simply retried later */
+        (void)UF2_xzAbsorb(fcs);
+        if (UF2_xzDrain(&fcs->xz.head, output))
+            return 1;
+        return UF2_xzDrain(&fcs->xz.tail, output);
+    }
     if (UF2_xzDrain(&fcs->xz.head, output))
         return 1;
     for (; fcs->outThread < fcs->threadCount; ++fcs->outThread) {
@@ -1488,6 +1606,8 @@ static size_t UF2_compressStream_input(UF2_CStream* fcs, UF2_inBuffer* input)
         DICT_put(buf, input);
         
         if (!DICT_availSpace(buf)) {
+            /* held slices do not wait for the caller */
+            CHECK_F(UF2_xzAbsorb(fcs));
             /* break if the compressor is not available */
             if (fcs->outThread < fcs->threadCount)
                 break;
@@ -1571,6 +1691,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_getNextCompressedBuffer(UF2_CStream* fcs, UF2_
     cbuf->size = 0;
 
     CHECK_F(UF2_waitCStream(fcs));
+    CHECK_F(UF2_xzAbsorb(fcs));
 
     UF2_xzOut *const head = &fcs->xz.head;
     UF2_xzOut *const tail = &fcs->xz.tail;
@@ -1637,6 +1758,7 @@ UF2LIB_API size_t UF2LIB_CALL UF2_remainingOutputSize(const UF2_CStream* fcs)
 static size_t UF2_writeEnd(UF2_CStream* const fcs)
 {
     if (UF2_isXzStream(fcs)) {
+        CHECK_F(UF2_xzAbsorb(fcs));
         /* after any slices still to be written, else straight after the head */
         UF2_xzOut *const out = (fcs->outThread < fcs->threadCount) ? &fcs->xz.tail : &fcs->xz.head;
         CHECK_F(UF2_xzEnd(fcs, out));
