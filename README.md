@@ -80,6 +80,15 @@ Radyx file archiver. An earlier version was released in the 7-Zip forks linked a
 considered suitable for production environments. However, no warranty or fitness for a particular
 purpose is expressed or implied.
 
+Changes since v1.5.1:
+
+- `UF2_p_xzSizedHeaders`: streamed .xz can state both sizes in every Block Header, by holding each
+  block in memory until it ends, so that it decompresses on several threads like one-shot output.
+  Off by default; default streaming output is unchanged. See [Output formats](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Output-formats).
+- One-shot .xz: a block split at its dictionary resets by the multi-threaded decoder is now also
+  checked while it is decoded, each thread over its part, with the parts' CRCs combined in order.
+- Two compiler warnings inherited from fast-lzma2 are gone.
+
 Changes in v1.5.1:
 
 - Fixed: on 32-bit x86 Windows, builds made by a GCC that assumes a 16-byte aligned stack (Debian's
