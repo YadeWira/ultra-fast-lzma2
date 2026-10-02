@@ -889,21 +889,33 @@ static size_t LZMA_decodeToDic(LZMA2_DCtx *const p, size_t const dic_limit, cons
         if (p->need_init_state)
             LZMA_initStateReal(p);
 
-        const BYTE *buf_limit;
-        if (finish_mode == LZMA_FINISH_END) {
-            buf_limit = src + in_size;
+        size_t processed;
+        if (in_size > LZMA_REQUIRED_INPUT_MAX) {
+            /* A symbol can read up to LZMA_REQUIRED_INPUT_MAX bytes from where it
+             * starts, and the decoder checks its limit only between symbols, so the
+             * limit leaves that much room before the end of the input. */
+            p->buf = src;
+            CHECK_F(LZMA_decodeReal2(p, dic_limit, src + in_size - LZMA_REQUIRED_INPUT_MAX));
+            processed = (size_t)(p->buf - src);
+        }
+        else if (finish_mode != LZMA_FINISH_END) {
+            return LZMA_STATUS_NEEDS_MORE_INPUT;
         }
         else {
-            if (in_size <= LZMA_REQUIRED_INPUT_MAX) {
-                return LZMA_STATUS_NEEDS_MORE_INPUT;
-            }
-            buf_limit = src + in_size - LZMA_REQUIRED_INPUT_MAX;
+            /* The last bytes are decoded from a copy padded with zeros, as the LZMA SDK
+             * does: a corrupt symbol then reads padding instead of whatever follows the
+             * input, and is caught by having used more than the input holds. Decoding
+             * them in place read up to LZMA_REQUIRED_INPUT_MAX bytes past the end. */
+            BYTE tail[LZMA_REQUIRED_INPUT_MAX * 2];
+            memset(tail, 0, sizeof(tail));
+            memcpy(tail, src, in_size);
+            p->buf = tail;
+            CHECK_F(LZMA_decodeReal2(p, dic_limit, tail + in_size));
+            processed = (size_t)(p->buf - tail);
+            if (processed > in_size)
+                return UF2_ERROR(corruption_detected);
         }
-        p->buf = src;
 
-        CHECK_F(LZMA_decodeReal2(p, dic_limit, buf_limit));
-
-        size_t const processed = (size_t)(p->buf - src);
         (*src_len) += processed;
         src += processed;
         in_size -= processed;
