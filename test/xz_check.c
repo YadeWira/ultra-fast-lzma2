@@ -199,10 +199,14 @@ static void checkDecode(const char *name, buffer c, buffer orig, expectation e, 
 
     static const size_t chunks[][2] = { { 1, 1 }, { 7, 13 }, { 65536, 65536 } };
     for (int k = 0; k < 3; ++k) {
-        for (unsigned t = 1; t <= 2; ++t) {
-            if (t == 2 && k != 2)
+        /* t = 3: one thread with a timeout, so that each call runs on the
+         * decompression thread and is waited for with UF2_waitDStream() */
+        for (unsigned t = 1; t <= 3; ++t) {
+            if (t > 1 && k != 2)
                 continue;
-            UF2_DStream *const ds = UF2_createDStreamMt(t);
+            UF2_DStream *const ds = UF2_createDStreamMt(t == 2 ? 2 : 1);
+            if (t == 3)
+                UF2_setDStreamTimeout(ds, 1);
             size_t outSize = 0;
             ++cases;
             size_t const r = decodeStream(ds, c, out, cap, chunks[k][0], chunks[k][1], &outSize);
