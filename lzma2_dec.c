@@ -997,7 +997,7 @@ size_t LZMA2_initDecoder(LZMA2_DCtx *const p, BYTE const dict_prop, BYTE *const 
     p->dic_buf_size = dic_buf_size;
     p->prop.lc = 3;
     p->prop.lp = 0;
-    p->prop.lc = 2;
+    p->prop.pb = 2;
     p->prop.dic_size = (U32)dict_size;
 
     p->state2 = LZMA2_STATE_CONTROL;
@@ -1102,6 +1102,15 @@ static size_t LZMA2_decodeChunkToDic(LZMA2_DCtx *const p, size_t const dic_limit
             BYTE const init_state = (mode != 0);
             if ((!init_dic && p->need_init_dic) || (!init_state && p->need_init_state2))
                 return UF2_ERROR(corruption_detected);
+            /* After a dictionary reset the first LZMA chunk must carry properties, as
+             * the LZMA SDK requires. need_init_prop was set but never checked, so a
+             * corrupt stream decoded with properties no chunk had set: pb was left
+             * uninitialized, which made the C decoder shift by out-of-range amounts
+             * and the assembler decoder index past its probability tables. */
+            if (p->need_init_prop && !LZMA2_IS_THERE_PROP(mode))
+                return UF2_ERROR(corruption_detected);
+            if (LZMA2_IS_THERE_PROP(mode))
+                p->need_init_prop = 0;
 
             LZMA_initDicAndState(p, init_dic, init_state);
             p->need_init_dic = 0;
