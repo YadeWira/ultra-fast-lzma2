@@ -693,7 +693,8 @@ int RMF_buildTable(UF2_matchTable* const tbl,
     else
         RMF_bitpackBuildTable(tbl, job, multi_thread, block);
 
-    if (job == 0 && tbl->st_index >= RADIX_CANCEL_INDEX) {
+    /* the other threads may still be taking lists: an atomic load */
+    if (job == 0 && UF2_atomic_load(tbl->st_index) >= RADIX_CANCEL_INDEX) {
         RMF_initListHeads(tbl);
         return 1;
     }
