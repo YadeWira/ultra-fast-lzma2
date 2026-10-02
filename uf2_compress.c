@@ -583,7 +583,8 @@ static size_t UF2_beginFrame(UF2_CCtx *const cctx, size_t const dictReduce)
     }
     else {
         DEBUGLOG(5, "Have compatible match table");
-        RMF_applyParameters(cctx->matchTable, &cctx->params.rParams, dictReduce);
+        /* it may reallocate the per-thread builders, and fail */
+        CHECK_F(RMF_applyParameters(cctx->matchTable, &cctx->params.rParams, dictReduce));
     }
 
     cctx->dictMax = 0;

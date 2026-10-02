@@ -228,7 +228,12 @@ UF2_matchTable* RMF_createMatchTable(const RMF_parameters* const p, size_t const
     tbl->unreduced_dict_size = unreduced_dict_size;
     tbl->builders = NULL;
 
-    RMF_applyParameters_internal(tbl, &params);
+    /* the per-thread builders are allocated here; a table without them would be
+     * returned as usable and every thread would dereference a NULL builder */
+    if (UF2_isError(RMF_applyParameters_internal(tbl, &params))) {
+        RMF_freeMatchTable(tbl);
+        return NULL;
+    }
 
     RMF_initListHeads(tbl);
 
