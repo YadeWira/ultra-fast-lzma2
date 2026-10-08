@@ -80,6 +80,25 @@ Radyx file archiver. An earlier version was released in the 7-Zip forks linked a
 considered suitable for production environments. However, no warranty or fitness for a particular
 purpose is expressed or implied.
 
+Changes in v1.6.1:
+
+- Stability release from a fuzzing and sanitizer campaign (libFuzzer with ASan and UBSan,
+  ThreadSanitizer, injected allocation failures, a real-file corpus). The compressed bytes do not
+  change; valid input compresses and decompresses exactly as in v1.6.0. Eleven defects were fixed,
+  most of them inherited from fast-lzma2:
+  - Decoding corrupt data: the LZMA decoder could read up to 20 bytes past the end of a chunk's
+    input; an LZMA chunk with no properties after a dictionary reset was decoded with an
+    uninitialized `pb` (a fast-lzma2 typo set `lc` twice), which made the C decoder shift out of
+    range and the assembler decoder index past its tables and crash. Both are now rejected.
+  - Threading: `UF2POOL_waitAll()` could return while a job was still running; a streaming
+    compression could read its result before it was finished; the match finder's shared list index
+    is now read atomically.
+  - Robustness: compression now returns an error, instead of crashing, when the match finder's
+    per-thread builders cannot be allocated; every .xz allocation goes through `UF2_setAllocator()`;
+    raw LZMA2 of an empty input no longer writes a stray property byte or past the buffer;
+    `UF2_compressBuffer()` no longer steps a pointer past the end of a small input; the match
+    finder's 4-byte probes are read without an unaligned cast.
+
 Changes in v1.6.0:
 
 - `UF2_p_xzSizedHeaders`: streamed .xz can state both sizes in every Block Header, by holding each
