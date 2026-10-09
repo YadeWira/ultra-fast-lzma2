@@ -55,7 +55,7 @@ Introduction
 /*------   Version   ------*/
 #define UF2_VERSION_MAJOR    1
 #define UF2_VERSION_MINOR    6
-#define UF2_VERSION_RELEASE  1
+#define UF2_VERSION_RELEASE  2
 
 #define UF2_VERSION_NUMBER  (UF2_VERSION_MAJOR *100*100 + UF2_VERSION_MINOR *100 + UF2_VERSION_RELEASE)
 UF2LIB_API unsigned UF2LIB_CALL UF2_versionNumber(void);   /**< useful to check dll version */

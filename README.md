@@ -80,6 +80,15 @@ Radyx file archiver. An earlier version was released in the 7-Zip forks linked a
 considered suitable for production environments. However, no warranty or fitness for a particular
 purpose is expressed or implied.
 
+Changes in v1.6.2:
+
+- A corrupt native stream could hold an LZMA chunk whose declared packed size is larger than its real
+  LZMA data. The decoders disagreed on it: the one-shot and single-threaded streaming decoders stopped
+  inside the chunk and reported success, while the multi-threaded streaming decoder, which locates
+  chunks by their packed size, read on into the next chunk. A completed LZMA chunk must now consume its
+  whole packed size, so every decode path rejects it. Valid input is unaffected and the compressed bytes
+  do not change; this is a decoder-only change. Found by a differential decoder fuzzer.
+
 Changes in v1.6.1:
 
 - Stability release from a fuzzing and sanitizer campaign (libFuzzer with ASan and UBSan,
