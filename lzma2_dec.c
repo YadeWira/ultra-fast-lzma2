@@ -1167,6 +1167,17 @@ static size_t LZMA2_decodeChunkToDic(LZMA2_DCtx *const p, size_t const dic_limit
             if (res != LZMA_STATUS_FINISHED && p->unpack_size == 0)
                 return UF2_ERROR(corruption_detected);
 
+            /* A completed LZMA chunk must consume its whole packed size. Leftover
+             * packed bytes mean the chunk's compressed size was declared larger
+             * than its real LZMA data, so the range decoder reached a clean end
+             * early; the next control byte would then be read from inside this
+             * chunk and desynchronise the stream. The single-threaded decoder
+             * stopped at such a stray byte while the multi-threaded one, which
+             * locates chunks by their packed size, read on, so the two disagreed
+             * on the same corrupt input. */
+            if (p->unpack_size == 0 && p->pack_size != 0)
+                return UF2_ERROR(corruption_detected);
+
             /* Error conditions:
                1. need input but chunk is finished
                2. have output space, input not needed, but nothing was written*/
