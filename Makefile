@@ -14,6 +14,11 @@ REAL_NAME:=libuf-lzma2.so.1.0
 LINKER_NAME=libuf-lzma2.so
 STATIC_LIBNAME=libuf-lzma2.a
 
+# Shared-library link flags. GNU ld (Linux, and mingw on Windows) take -soname;
+# macOS ld takes -install_name and names the library .dylib. Overridden for
+# Darwin in the Unix branch below.
+SHARED_FLAGS=-shared -pthread -Wl,-soname,$(SONAME)
+
 x86_64:=0
 arm64:=0
 
@@ -48,6 +53,16 @@ ifeq ($(PROC_ARCH),arm64)
 endif
 endif
 
+# macOS: a shared library is a .dylib linked with -install_name, not -soname.
+# On Apple Silicon the arch detection above already selects the ARM64 assembler
+# decoder, whose source has the Mach-O symbol name under __APPLE__.
+ifeq ($(shell uname -s),Darwin)
+	REAL_NAME:=libuf-lzma2.1.0.dylib
+	SONAME:=libuf-lzma2.1.dylib
+	LINKER_NAME:=libuf-lzma2.dylib
+	SHARED_FLAGS:=-dynamiclib -pthread -install_name $(SONAME)
+endif
+
 ifeq ($(x86_64),1)
 	CFLAGS+=-DLZMA2_DEC_OPT
 	OBJ+=lzma_dec_x86_64.o
@@ -60,7 +75,7 @@ endif
 
 libuf-lzma2 : $(OBJ)
 	@echo "Build static & dynamic library."
-	$(CC) -shared -pthread -Wl,-soname,$(SONAME) -o $(REAL_NAME) $(OBJ)
+	$(CC) $(SHARED_FLAGS) -o $(REAL_NAME) $(OBJ)
 	$(AR) $(STATIC_LIBNAME) $(OBJ)
 	@echo "Library build SUCCESS."
 	
@@ -83,7 +98,7 @@ else
 	strip -g $(LIBDIR)/$(REAL_NAME)
 	chmod 0755 $(LIBDIR)/$(REAL_NAME)
 	cd $(LIBDIR) && ln -sf $(REAL_NAME) $(LINKER_NAME)
-	ldconfig $(LIBDIR)
+	command -v ldconfig >/dev/null 2>&1 && ldconfig $(LIBDIR) || true
 	mkdir -p $(DESTDIR)$(PREFIX)/include
 	cp uf-lzma2.h $(DESTDIR)$(PREFIX)/include/
 	cp uf2_errors.h $(DESTDIR)$(PREFIX)/include/
@@ -96,7 +111,7 @@ ifeq ($(OS),Windows_NT)
 else
 	rm -f $(LIBDIR)/$(LINKER_NAME)
 	rm -f $(LIBDIR)/$(REAL_NAME)
-	ldconfig $(LIBDIR)
+	command -v ldconfig >/dev/null 2>&1 && ldconfig $(LIBDIR) || true
 	rm -f $(DESTDIR)$(PREFIX)/include/uf-lzma2.h
 	rm -f $(DESTDIR)$(PREFIX)/include/uf2_errors.h
 endif
