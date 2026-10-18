@@ -25,8 +25,8 @@ extra memory each. Binaries of 7-Zip forks that use it are available in the [7-Z
   Silesia 22.97% → 22.88%, AIT 53.80% → 52.64%. See [Findings](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Findings#ratio).
 - **An ARM64 assembler LZMA decoder**, ported from LZMA SDK 26.03; before, only x86_64 had one.
 - **v1.1.0**: fast-lzma2's dev branch, unreleased since 2019, with byte-identical output.
-- **`make check`**, the .xz and streaming tests, run by CI on every push on six configurations
-  including ARM64 and Windows.
+- **`make check`**, the .xz and streaming tests, run by CI on every push on seven configurations
+  including ARM64, macOS (Apple Silicon) and Windows.
 - **Measurement tools**: `bench/curve` for the speed/ratio curve, and `bench/lzbench/add_uflzma2.py`,
   which adds the library to lzbench with its assembler decoder. See [Building](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Building).
 - **Fixes**, among them a crash in streaming decompression inherited from fast-lzma2. See the
@@ -69,7 +69,8 @@ files compressed one by one. The data are in `bench/data`, and `bench/plot_curve
     make install
 
 On x86_64 and ARM64 the build substitutes the assembler LZMA decoder for the C one; `x86_64=0 arm64=0`
-forces the C decoder, and `make CC=aarch64-linux-gnu-gcc arm64=1` cross-compiles for ARM64. On
+forces the C decoder, and `make CC=aarch64-linux-gnu-gcc arm64=1` cross-compiles for ARM64. On macOS
+(Apple Silicon) `make` links a `.dylib` and uses the ARM64 assembler decoder. On
 Windows, `build/VS` holds a Visual Studio solution. Details, and how to measure, in
 [Building](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Building). If a build fails, please open an issue.
 
@@ -79,6 +80,13 @@ The library has passed long periods of fuzz testing, and testing on file sets se
 Radyx file archiver. An earlier version was released in the 7-Zip forks linked above. The library is
 considered suitable for production environments. However, no warranty or fitness for a particular
 purpose is expressed or implied.
+
+Changes in v1.6.3:
+
+- Builds on macOS (Apple Silicon). The ARM64 assembler decoder already carried the Mach-O symbol
+  name, so the build only needed to link the shared library as a `.dylib` with `-install_name` on
+  Darwin; CI now runs `make check` on an Apple Silicon runner. The compressed bytes do not change;
+  this is a build and platform change only.
 
 Changes in v1.6.2:
 
