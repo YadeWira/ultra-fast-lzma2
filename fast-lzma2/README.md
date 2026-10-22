@@ -61,6 +61,19 @@ earlier version was released in the 7-Zip forks linked above. The library is con
 However, no warranty or fitness for a particular purpose is expressed or implied.
 
 
+Changes in v1.1.1:
+
+The decoder fixes listed under 1.1.0 below were not in fact present in `lzma2_dec.c` in the 1.1.0 tag:
+the change was applied to the working tree but lost before the commit, and the valid-data tests did not
+catch it because the fixes only affect corrupt input. 1.1.1 adds them. Reported against 1.1.0 by the
+zpaq-std project with an AddressSanitizer corpus. The compressed output is unchanged.
+
+- The LZMA decoder no longer reads up to 20 bytes past the end of a chunk's input (a heap read overflow
+  on damaged blocks), a chunk with no properties after a dictionary reset is rejected rather than decoded
+  with an uninitialised `pb` (a fast-lzma2 typo set `lc` twice), and a chunk that ends before consuming
+  its declared packed size is rejected rather than desynchronising the stream. Verified against the
+  reporter's corpus under AddressSanitizer: every crash and silent mis-decode is now a clean rejection.
+
 Changes in v1.1.0:
 
 This release is maintained alongside [ultra-fast-lzma2](https://github.com/YadeWira/ultra-fast-lzma2), a

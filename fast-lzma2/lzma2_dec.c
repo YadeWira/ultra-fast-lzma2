@@ -862,21 +862,32 @@ static size_t LZMA_decodeToDic(LZMA2_DCtx *const p, size_t const dic_limit, cons
         if (p->need_init_state)
             LZMA_initStateReal(p);
 
-        const BYTE *buf_limit;
-        if (finish_mode == LZMA_FINISH_END) {
-            buf_limit = src + in_size;
+        size_t processed;
+        if (in_size > LZMA_REQUIRED_INPUT_MAX) {
+            /* A symbol can read up to LZMA_REQUIRED_INPUT_MAX bytes from where it
+             * starts, and the decoder checks its limit only between symbols, so the
+             * limit leaves that much room before the end of the input. */
+            p->buf = src;
+            CHECK_F(LZMA_decodeReal2(p, dic_limit, src + in_size - LZMA_REQUIRED_INPUT_MAX));
+            processed = (size_t)(p->buf - src);
+        }
+        else if (finish_mode != LZMA_FINISH_END) {
+            return LZMA_STATUS_NEEDS_MORE_INPUT;
         }
         else {
-            if (in_size <= LZMA_REQUIRED_INPUT_MAX) {
-                return LZMA_STATUS_NEEDS_MORE_INPUT;
-            }
-            buf_limit = src + in_size - LZMA_REQUIRED_INPUT_MAX;
+            /* The last bytes are decoded from a copy padded with zeros, as the LZMA SDK
+             * does: a corrupt symbol then reads padding instead of whatever follows the
+             * input, and is caught by having used more than the input holds. Decoding
+             * them in place read up to LZMA_REQUIRED_INPUT_MAX bytes past the end. */
+            BYTE tail[LZMA_REQUIRED_INPUT_MAX * 2];
+            memset(tail, 0, sizeof(tail));
+            memcpy(tail, src, in_size);
+            p->buf = tail;
+            CHECK_F(LZMA_decodeReal2(p, dic_limit, tail + in_size));
+            processed = (size_t)(p->buf - tail);
+            if (processed > in_size)
+                return FL2_ERROR(corruption_detected);
         }
-        p->buf = src;
-
-        CHECK_F(LZMA_decodeReal2(p, dic_limit, buf_limit));
-
-        size_t const processed = (size_t)(p->buf - src);
         (*src_len) += processed;
         src += processed;
         in_size -= processed;
@@ -958,7 +969,7 @@ size_t LZMA2_initDecoder(LZMA2_DCtx *const p, BYTE const dict_prop, BYTE *const 
     p->dic_buf_size = dic_buf_size;
     p->prop.lc = 3;
     p->prop.lp = 0;
-    p->prop.lc = 2;
+    p->prop.pb = 2;
     p->prop.dic_size = (U32)dict_size;
 
     p->state2 = LZMA2_STATE_CONTROL;
@@ -1063,6 +1074,15 @@ static size_t LZMA2_decodeChunkToDic(LZMA2_DCtx *const p, size_t const dic_limit
             BYTE const init_state = (mode != 0);
             if ((!init_dic && p->need_init_dic) || (!init_state && p->need_init_state2))
                 return FL2_ERROR(corruption_detected);
+            /* After a dictionary reset the first LZMA chunk must carry properties, as
+             * the LZMA SDK requires. need_init_prop was set but never checked, so a
+             * corrupt stream decoded with properties no chunk had set: pb was left
+             * uninitialized, which made the C decoder shift by out-of-range amounts
+             * and the assembler decoder index past its probability tables. */
+            if (p->need_init_prop && !LZMA2_IS_THERE_PROP(mode))
+                return FL2_ERROR(corruption_detected);
+            if (LZMA2_IS_THERE_PROP(mode))
+                p->need_init_prop = 0;
 
             LZMA_initDicAndState(p, init_dic, init_state);
             p->need_init_dic = 0;
@@ -1117,6 +1137,17 @@ static size_t LZMA2_decodeChunkToDic(LZMA2_DCtx *const p, size_t const dic_limit
 
             /* error if decoder not finished but chunk output is complete */
             if (res != LZMA_STATUS_FINISHED && p->unpack_size == 0)
+                return FL2_ERROR(corruption_detected);
+
+            /* A completed LZMA chunk must consume its whole packed size. Leftover
+             * packed bytes mean the chunk's compressed size was declared larger
+             * than its real LZMA data, so the range decoder reached a clean end
+             * early; the next control byte would then be read from inside this
+             * chunk and desynchronise the stream. The single-threaded decoder
+             * stopped at such a stray byte while the multi-threaded one, which
+             * locates chunks by their packed size, read on, so the two disagreed
+             * on the same corrupt input. */
+            if (p->unpack_size == 0 && p->pack_size != 0)
                 return FL2_ERROR(corruption_detected);
 
             /* Error conditions:
