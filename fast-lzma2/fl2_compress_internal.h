@@ -62,6 +62,7 @@ struct FL2_CCtx_s {
 #endif
     FL2_dataBlock curBlock;
     size_t asyncRes;
+    BYTE asyncPending;  /* a compression was handed to compressThread and not yet seen done */
     size_t threadCount;
     size_t outThread;
     size_t outPos;

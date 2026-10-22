@@ -76,14 +76,15 @@ compatible build features. The compressed output is unchanged.
   builders instead of returning a table whose threads dereference a NULL builder.
 - `FL2POOL_waitAll()` reads the pool's state under the lock, so it no longer returns while a job is still
   running and lets the caller read results the job is still writing.
+- Streaming compression with a timeout no longer reads a block's results - its slice count and sizes, the
+  compressed data and the async result code - while the block is still being compressed on another thread;
+  they are read only once a wait, or a lock-synchronised idle check, has seen it done. Verified race-free
+  with ThreadSanitizer over a streaming round trip under aggressive timeouts.
 - Compression of an empty input no longer writes a stray property byte (nor one past the buffer) for raw
   LZMA2, and no longer steps a pointer past the end of a small input.
 - An ARM64 assembler LZMA decoder, ported from the LZMA SDK (used on Linux and macOS); before, only
   x86_64 had one.
 - Builds on macOS (Apple Silicon): `make` links a `.dylib` with `-install_name`, detected from `uname -s`.
-
-One threading fix from the fork, for streaming compression with a timeout, is not yet ported: its code
-diverges from this library's streaming path and needs dedicated analysis.
 
 Changes in v1.0.1:
 

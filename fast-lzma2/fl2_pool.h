@@ -57,6 +57,10 @@ int FL2POOL_waitAll(void *ctx, unsigned timeout);
 
 size_t FL2POOL_threadsBusy(void *ctx);
 
+/*! FL2POOL_isIdle() :
+ *  Returns 1 if no job is queued or running (read under the pool's lock). */
+int FL2POOL_isIdle(void *ctx);
+
 #if defined (__cplusplus)
 }
 #endif

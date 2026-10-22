@@ -202,4 +202,15 @@ size_t FL2POOL_threadsBusy(void * ctx)
     return ((FL2POOL_ctx*)ctx)->numThreadsBusy;
 }
 
+int FL2POOL_isIdle(void *ctxVoid)
+{
+    FL2POOL_ctx* const ctx = (FL2POOL_ctx*)ctxVoid;
+    if (!ctx)
+        return 1;
+    FL2_pthread_mutex_lock(&ctx->queueMutex);
+    int const idle = !ctx->numThreadsBusy && ctx->queueIndex >= ctx->queueEnd;
+    FL2_pthread_mutex_unlock(&ctx->queueMutex);
+    return idle;
+}
+
 #endif  /* FL2_SINGLETHREAD */
