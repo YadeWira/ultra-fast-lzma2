@@ -44,6 +44,9 @@ tester, and DLL.
 Run `make` in the root directory to build the shared library, then `make install` to allow other programs to use the headers and
 libfast-lzma2. Use `make test` to build the file compression tester and run it on a test file.
 
+On x86_64 and ARM64 the build uses Igor Pavlov's assembler LZMA decoder (`x86_64=0 arm64=0` forces the C
+one). On macOS (Apple Silicon) `make` links a `.dylib`; on Linux a `.so`.
+
 The bench, fuzzer and test directories have makefiles for these programs. The CMake file present in earlier releases does not
 have an installation script so is not currently included.
 
@@ -57,6 +60,30 @@ The library has passed long periods of fuzz testing, and testing on file sets se
 earlier version was released in the 7-Zip forks linked above. The library is considered suitable for production environments.
 However, no warranty or fitness for a particular purpose is expressed or implied.
 
+
+Changes in v1.1.0:
+
+This release is maintained alongside [ultra-fast-lzma2](https://github.com/YadeWira/ultra-fast-lzma2), a
+fork of this library, and brings over the correctness and robustness fixes it found by fuzzing, plus two
+compatible build features. The compressed output is unchanged.
+
+- Decoding corrupt data: the LZMA decoder no longer reads up to 20 bytes past the end of a chunk's
+  input; an LZMA chunk with no properties after a dictionary reset, or one that ends before consuming
+  its declared packed size, is now rejected instead of decoded with stale properties or desynchronising
+  the stream.
+- The match finder reads its 4-byte repeat probes with an unaligned-safe load; its shared list index is
+  read atomically; and `RMF_createMatchTable` now frees and reports a failure to allocate the per-thread
+  builders instead of returning a table whose threads dereference a NULL builder.
+- `FL2POOL_waitAll()` reads the pool's state under the lock, so it no longer returns while a job is still
+  running and lets the caller read results the job is still writing.
+- Compression of an empty input no longer writes a stray property byte (nor one past the buffer) for raw
+  LZMA2, and no longer steps a pointer past the end of a small input.
+- An ARM64 assembler LZMA decoder, ported from the LZMA SDK (used on Linux and macOS); before, only
+  x86_64 had one.
+- Builds on macOS (Apple Silicon): `make` links a `.dylib` with `-install_name`, detected from `uname -s`.
+
+One threading fix from the fork, for streaming compression with a timeout, is not yet ported: its code
+diverges from this library's streaming path and needs dedicated analysis.
 
 Changes in v1.0.1:
 

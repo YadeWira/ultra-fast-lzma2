@@ -453,7 +453,8 @@ static size_t FL2_beginFrame(FL2_CCtx* const cctx, size_t const dictReduce)
     }
     else {
         DEBUGLOG(5, "Have compatible match table");
-        RMF_applyParameters(cctx->matchTable, &cctx->params.rParams, dictReduce);
+        /* it may reallocate the per-thread builders, and fail */
+        CHECK_F(RMF_applyParameters(cctx->matchTable, &cctx->params.rParams, dictReduce));
     }
 
     cctx->dictMax = 0;
@@ -522,6 +523,11 @@ static size_t FL2_compressBuffer(FL2_CCtx* const cctx,
             dstCapacity -= cctx->jobs[u].cSize;
         }
         srcSize -= cctx->curBlock.end - cctx->curBlock.start;
+        /* Nothing left: stop before setting up a next block. Below, the overlap can
+         * exceed what remains of a small input, and stepping data past the input
+         * would be undefined even though it is never read. */
+        if (srcSize == 0)
+            break;
         if (cctx->params.cParams.reset_interval
             && blockTotal + MIN(dictionarySize - blockOverlap, srcSize) > dictionarySize * cctx->params.cParams.reset_interval) {
             /* periodically reset the dictionary for mt decompression */
@@ -569,12 +575,17 @@ FL2LIB_API size_t FL2LIB_CALL FL2_compressCCtx(FL2_CCtx* cctx,
     BYTE* const end = dstBuf + dstCapacity;
 
     dstBuf += cSize;
-    if(dstBuf >= end)
-        return FL2_ERROR(dstSize_tooSmall);
 
-    if (cSize == 0)
+    /* An empty input has written no property byte yet. Raw LZMA2 (omitProp) has
+     * none at all: it used to get one anyway, so an empty raw stream was malformed
+     * and one byte longer than the capacity the check above allows. */
+    if (cSize == 0 && !cctx->params.omitProp) {
+        if (dstBuf >= end)
+            return FL2_ERROR(dstSize_tooSmall);
         *dstBuf++ = FL2_getProp(cctx, 0);
-
+    }
+    if (dstBuf >= end)
+        return FL2_ERROR(dstSize_tooSmall);
     *dstBuf++ = LZMA2_END_MARKER;
 
 #ifndef NO_XXHASH

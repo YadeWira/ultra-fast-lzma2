@@ -228,7 +228,12 @@ FL2_matchTable* RMF_createMatchTable(const RMF_parameters* const p, size_t const
     tbl->unreduced_dict_size = unreduced_dict_size;
     tbl->builders = NULL;
 
-    RMF_applyParameters_internal(tbl, &params);
+    /* the per-thread builders are allocated here; a table without them would be
+     * returned as usable and every thread would dereference a NULL builder */
+    if (FL2_isError(RMF_applyParameters_internal(tbl, &params))) {
+        RMF_freeMatchTable(tbl);
+        return NULL;
+    }
 
     RMF_initListHeads(tbl);
 
@@ -689,7 +694,8 @@ int RMF_buildTable(FL2_matchTable* const tbl,
     else
         RMF_bitpackBuildTable(tbl, job, multi_thread, block);
 
-    if (job == 0 && tbl->st_index >= RADIX_CANCEL_INDEX) {
+    /* the other threads may still be taking lists: an atomic load */
+    if (job == 0 && FL2_atomic_load(tbl->st_index) >= RADIX_CANCEL_INDEX) {
         RMF_initListHeads(tbl);
         return 1;
     }
