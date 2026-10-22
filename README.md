@@ -6,6 +6,11 @@ explicit about it: the great majority of this code is Conor McCarthy's work, dua
 [BSD](LICENSE) and [GPLv2](COPYING), and the LZMA2 codec it builds on is Igor Pavlov's, taken from the
 LZMA SDK. The upstream repository holds the full authorship record.
 
+The [`fast-lzma2/`](fast-lzma2) directory holds that upstream library kept current: this fork's
+correctness and robustness fixes, and its compatible build features (the ARM64 assembler decoder and a
+macOS build), are backported there and released as fast-lzma2, while it keeps the plain `FL2_` identity
+without the additions below. See its [changelog](fast-lzma2/README.md).
+
 The rule this fork keeps is that output stays standard LZMA2: everything it adds is on the encoder
 side, in the framing, or in how the library is built.
 
