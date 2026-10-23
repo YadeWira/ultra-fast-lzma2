@@ -86,6 +86,13 @@ Radyx file archiver. An earlier version was released in the 7-Zip forks linked a
 considered suitable for production environments. However, no warranty or fitness for a particular
 purpose is expressed or implied.
 
+Changes in v1.6.4:
+
+- A compression level above the maximum (`UF2_maxCLevel()`, which is 11) now clamps to the maximum
+  instead of silently falling back to the default level. The one-shot and streaming entry points passed
+  the out-of-range level to `UF2_CCtx_setParameter` without checking its error, so e.g. level 12 left the
+  context at the default level. In-range levels (1-11) are unchanged. The same fix is in fast-lzma2.
+
 Changes in v1.6.3:
 
 - Builds on macOS (Apple Silicon). The ARM64 assembler decoder already carried the Mach-O symbol

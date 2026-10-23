@@ -712,6 +712,11 @@ static size_t UF2_compressCCtxNative(UF2_CCtx *cctx,
     if (dstCapacity < 2U - cctx->params.omitProp) /* empty LZMA2 stream is byte sequence {0, 0} */
         return UF2_ERROR(dstSize_tooSmall);
 
+    /* An over-range level clamps to the maximum. Without this, the out-of-bound
+       value made UF2_CCtx_setParameter return an error that this call ignored,
+       leaving the context at its default level instead of the level asked for. */
+    if (compressionLevel > UF2_maxCLevel())
+        compressionLevel = UF2_maxCLevel();
     if (compressionLevel > 0)
         UF2_CCtx_setParameter(cctx, UF2_p_compressionLevel, compressionLevel);
 
@@ -934,6 +939,9 @@ UF2LIB_API size_t UF2LIB_CALL UF2_compressCCtx(UF2_CCtx *cctx,
     const void* src, size_t srcSize,
     int compressionLevel)
 {
+    /* An over-range level clamps to the maximum (see UF2_compressCCtxNative). */
+    if (compressionLevel > UF2_maxCLevel())
+        compressionLevel = UF2_maxCLevel();
     if (compressionLevel > 0)
         UF2_CCtx_setParameter(cctx, UF2_p_compressionLevel, compressionLevel);
 
@@ -1514,6 +1522,9 @@ UF2LIB_API size_t UF2LIB_CALL UF2_initCStream(UF2_CStream* fcs, int compressionL
     fcs->wroteProp = 0;
     fcs->loopCount = 0;
 
+    /* An over-range level clamps to the maximum (see UF2_compressCCtxNative). */
+    if (compressionLevel > UF2_maxCLevel())
+        compressionLevel = UF2_maxCLevel();
     if(compressionLevel > 0)
         UF2_CCtx_setParameter(fcs, UF2_p_compressionLevel, compressionLevel);
 
