@@ -61,6 +61,14 @@ earlier version was released in the 7-Zip forks linked above. The library is con
 However, no warranty or fitness for a particular purpose is expressed or implied.
 
 
+Changes in v1.1.2:
+
+- A compression level above the maximum (`FL2_maxCLevel()`, which is 10) now clamps to the maximum
+  instead of silently falling back to the default level. The one-shot (`FL2_compress*`) and streaming
+  (`FL2_initCStream`) entry points passed the out-of-range level straight to `FL2_CCtx_setParameter`
+  and did not check its error, so e.g. level 11 left the context at the default level 6 and compressed
+  worse than level 10. The compressed output for in-range levels (1-10) is unchanged.
+
 Changes in v1.1.1:
 
 The decoder fixes listed under 1.1.0 below were not in fact present in `lzma2_dec.c` in the 1.1.0 tag:

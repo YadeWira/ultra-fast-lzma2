@@ -555,6 +555,11 @@ FL2LIB_API size_t FL2LIB_CALL FL2_compressCCtx(FL2_CCtx* cctx,
     if (dstCapacity < 2U - cctx->params.omitProp) /* empty LZMA2 stream is byte sequence {0, 0} */
         return FL2_ERROR(dstSize_tooSmall);
 
+    /* An over-range level clamps to the maximum. Without this, the out-of-bound
+       value made FL2_CCtx_setParameter return an error that this call ignored,
+       leaving the context at its default level (6) instead of the level asked for. */
+    if (compressionLevel > FL2_maxCLevel())
+        compressionLevel = FL2_maxCLevel();
     if (compressionLevel > 0)
         FL2_CCtx_setParameter(cctx, FL2_p_compressionLevel, compressionLevel);
 
@@ -874,6 +879,9 @@ FL2LIB_API size_t FL2LIB_CALL FL2_initCStream(FL2_CStream* fcs, int compressionL
     fcs->wroteProp = 0;
     fcs->loopCount = 0;
 
+    /* An over-range level clamps to the maximum (see FL2_compressCCtx). */
+    if (compressionLevel > FL2_maxCLevel())
+        compressionLevel = FL2_maxCLevel();
     if(compressionLevel > 0)
         FL2_CCtx_setParameter(fcs, FL2_p_compressionLevel, compressionLevel);
 
