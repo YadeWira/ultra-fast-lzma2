@@ -24,6 +24,7 @@ extra memory each. Binaries of 7-Zip forks that use it are available in the [7-Z
 | --- | --- |
 | CI | [![CI](https://github.com/YadeWira/ultra-fast-lzma2/actions/workflows/check.yml/badge.svg "Continuous Integration")](https://github.com/YadeWira/ultra-fast-lzma2/actions/workflows/check.yml) |
 | Latest release | [![Latest release](https://img.shields.io/github/v/release/YadeWira/ultra-fast-lzma2 "Latest release")](https://github.com/YadeWira/ultra-fast-lzma2/releases/latest) |
+| fast-lzma2 | [![fast-lzma2](https://img.shields.io/github/v/tag/YadeWira/ultra-fast-lzma2?filter=fast-lzma2-*&label=latest%20tag "Latest fast-lzma2 tag")](https://github.com/YadeWira/ultra-fast-lzma2/tags) |
 
 ## Supported systems
 
