@@ -24,12 +24,20 @@ extra memory each. Binaries of 7-Zip forks that use it are available in the [7-Z
 | --- | --- |
 | CI | [![CI](https://github.com/YadeWira/ultra-fast-lzma2/actions/workflows/check.yml/badge.svg "Continuous Integration")](https://github.com/YadeWira/ultra-fast-lzma2/actions/workflows/check.yml) |
 | Latest release | [![Latest release](https://img.shields.io/github/v/release/YadeWira/ultra-fast-lzma2 "Latest release")](https://github.com/YadeWira/ultra-fast-lzma2/releases/latest) |
-| Linux x86_64 | Supported · assembler decoder · `make check` on every push |
-| Linux x86 (32-bit) | Supported · C decoder · `make check` on every push |
-| Linux ARM64 | Supported · assembler decoder · `make check` under qemu on every push |
-| Windows x64 | Supported · assembler decoder · `make check` with mingw-w64 on every push · MSVC DLL |
-| Windows x86 (32-bit) | Supported · C decoder · `make check` with mingw-w64 on every push · MSVC DLL |
-| macOS ARM64 | Supported · assembler decoder · `make check` on every push · `.dylib` |
+
+## Supported systems
+
+Support covers these six targets, and the release build publishes a library for each of them and nothing
+else.
+
+| System | Decoder | Status |
+| --- | --- | --- |
+| Linux x86_64 | assembler | Supported · `make check` on every push |
+| Linux x86 (32-bit) | C | Supported · `make check` on every push |
+| Linux ARM64 | assembler | Supported · `make check` under qemu on every push |
+| Windows x64 | assembler | Supported · `make check` with mingw-w64 on every push · MSVC DLL |
+| Windows x86 (32-bit) | C | Supported · `make check` with mingw-w64 on every push · MSVC DLL |
+| macOS ARM64 | assembler | Supported · `make check` on every push · `.dylib` |
 
 ## What this fork adds
 
@@ -41,8 +49,8 @@ extra memory each. Binaries of 7-Zip forks that use it are available in the [7-Z
   Silesia 22.97% → 22.88%, AIT 53.80% → 52.64%. See [Findings](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Findings#ratio).
 - **An ARM64 assembler LZMA decoder**, ported from LZMA SDK 26.03; before, only x86_64 had one.
 - **v1.1.0**: fast-lzma2's dev branch, unreleased since 2019, with byte-identical output.
-- **`make check`**, the .xz and streaming tests, run by CI on every push for every target in the table
-  above, under ASan+UBSan and in a single-threaded build as well.
+- **`make check`**, the .xz and streaming tests, run by CI on every push for every supported system,
+  under ASan+UBSan and in a single-threaded build as well.
 - **Measurement tools**: `bench/curve` for the speed/ratio curve, and `bench/lzbench/add_uflzma2.py`,
   which adds the library to lzbench with its assembler decoder. See [Building](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Building).
 - **Fixes**, among them a crash in streaming decompression inherited from fast-lzma2. See the
@@ -89,9 +97,6 @@ forces the C decoder, and `make CC=aarch64-linux-gnu-gcc arm64=1` cross-compiles
 (Apple Silicon) `make` links a `.dylib` and uses the ARM64 assembler decoder. On
 Windows, `build/VS` holds a Visual Studio solution. Details, and how to measure, in
 [Building](https://github.com/YadeWira/ultra-fast-lzma2/wiki/Building). If a build fails, please open an issue.
-
-Support covers the six targets in the table above: Linux x86, x86_64 and ARM64, Windows x86 and x64, and
-macOS on Apple Silicon. The release build publishes a library for each of them and nothing else.
 
 ## Status
 
