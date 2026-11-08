@@ -61,6 +61,29 @@ earlier version was released in the 7-Zip forks linked above. The library is con
 However, no warranty or fitness for a particular purpose is expressed or implied.
 
 
+Changes in v1.2.0:
+
+- Fixed a crash in `FL2_cancelDStream()`. A single-threaded stream has no
+  multithreaded decoder state, and setting a timeout created the decompression
+  thread anyway, so cancelling such a stream dereferenced a NULL pointer.
+- `FL2_createCCtx()` no longer leaks the context when the dual-buffered
+  compression stream cannot allocate its thread pool.
+- The file-list utility used by the test programs no longer leaks the path of a
+  skipped symbolic link, and a failed reallocation no longer loses the buffer it
+  was growing.
+- The x86_64 assembler LZMA decoder is the 2024 body from LZMA SDK 26.06,
+  adapted to this library: a full output during a match copy stops and reports
+  success instead of corruption, and an invalid match distance saves the decoder
+  state before reporting the error. Decoding speed is unchanged; the difference
+  is in the handling of damaged input and of a full output buffer.
+- The shared library is built with hidden visibility and exports only the `FL2_*`
+  API. The 111 internal symbols it used to export (`XXH32`, `UTIL_*`, `RMF_*`,
+  `DICT_*`, ...) are no longer visible. No public symbol was removed.
+- The build now fails if a field of `LZMA2_DCtx` is moved, since the assembler
+  decoder addresses it by fixed offsets.
+
+The compressed bytes are unchanged at every level from 1 to 10.
+
 Changes in v1.1.2:
 
 - A compression level above the maximum (`FL2_maxCLevel()`, which is 10) now clamps to the maximum

@@ -105,6 +105,10 @@ MY_ALIGN_16 macro
         MY_ALIGN 16
 endm
 
+MY_ALIGN_32 macro
+        MY_ALIGN 32
+endm
+
 MY_ALIGN_64 macro
         MY_ALIGN 64
 endm
@@ -548,6 +552,7 @@ kAlignTableSize         equ (1 SHL kNumAlignBits)
 
 kMatchMinLen            equ 2
 kMatchSpecLenStart      equ (kMatchMinLen + kLenNumLowSymbols * 2 + kLenNumHighSymbols)
+kMatchSpecLen_Error_Data equ (1 SHL 9)
 
 kStartOffset    equ 1664
 SpecPos         equ (-kStartOffset)
@@ -815,7 +820,6 @@ lit_end:
         IF_BIT_0_NOUP probs_state_R, pbPos_R, IsMatch, lit_start
 
 ; ---------- MATCHES ----------
-MY_ALIGN_16
 IsMatch_label:
         UPDATE_1 probs_state_R, pbPos_R, IsMatch
         IF_BIT_1 probs_state_R, 0, IsRep, IsRep_label
@@ -836,7 +840,7 @@ len_decode:
         mov     sym, 1
         PLOAD   x1, probs + 1 * PMULT
 
-MY_ALIGN_16
+MY_ALIGN_32
 len8_loop:
         BIT_1   x1, x2
         mov     x1, x2
@@ -846,7 +850,7 @@ len8_loop:
         mov     len_temp, (kLenNumHighSymbols - kLenNumLowSymbols * 2) - 1 - kMatchMinLen
         jmp     len_mid_2
         
-MY_ALIGN_16
+MY_ALIGN_32
 len_mid_0:
         UPDATE_0 probs, 0, 0
         add     probs, pbPos_R
@@ -912,7 +916,7 @@ slot_loop:
         jmp     direct_norm
         
 ; ---------- DIRECT DISTANCE ----------
-MY_ALIGN_16
+MY_ALIGN_32
 direct_loop:
         shr     range, 1
         mov     t0, cod
@@ -932,7 +936,7 @@ direct_norm:
         NORM_2
         jmp     direct_loop
 
-MY_ALIGN_16
+MY_ALIGN_32
 direct_end:
         ;  prob =  + kAlign;
         ;  distance <<= kNumAlignBits;
@@ -942,6 +946,10 @@ direct_end:
         REV_2   x1, 8
 
 decode_dist_end:
+
+        mov     t1, LOC rep0
+        mov     x1, LOC rep1
+        mov     x2, LOC rep2
 
         ; if (distance >= (checkDicSize == 0 ? processedPos: checkDicSize))
 
@@ -957,14 +965,11 @@ decode_dist_end:
         ; rep0 = distance + 1;
 
         inc     sym
-        mov     t0, LOC rep0
-        mov     t1, LOC rep1
-        mov     x1, LOC rep2
         mov     LOC rep0, sym
         mov     sym, len_temp
-        mov     LOC rep1, t0
-        mov     LOC rep2, t1
-        mov     LOC rep3, x1
+        mov     LOC rep1, t1
+        mov     LOC rep2, x1
+        mov     LOC rep3, x2
         
         ; state = (state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3;
         cmp     state, (kNumStates + kNumLitStates) * PMULT
@@ -983,7 +988,7 @@ copy_match:
         ; }
         mov     cnt_R, LOC limit
         sub     cnt_R, dicPos
-        jz      fin_ERROR
+        jz      fin_dicPos_LIMIT
 
         ; curLen = ((rem < len) ? (unsigned)rem : len);
         cmp     cnt_R, sym_R
@@ -1111,7 +1116,7 @@ lit_matched_end:
 
 
 ; ---------- REP 0 LITERAL ----------
-MY_ALIGN_16
+MY_ALIGN_32
 IsRep0Short_label:
         UPDATE_0 probs_state_R, pbPos_R, IsRep0Long
 
@@ -1122,9 +1127,11 @@ IsRep0Short_label:
         sub     t0_R, dic
         
         sub     probs, RepLenCoder * PMULT
-        inc     processedPos
+
         ; state = state < kNumLitStates ? 9 : 11;
         or      state, 1 * PMULT
+
+        inc     processedPos
         IsMatchBranch_Pre
        
         sub     t0_R, probBranch_R
@@ -1135,7 +1142,7 @@ IsRep0Short_label:
         jmp     lz_end_match
   
         
-MY_ALIGN_16
+MY_ALIGN_32
 IsRep_label:
         UPDATE_1 probs_state_R, 0, IsRep
 
@@ -1156,7 +1163,7 @@ IsRep_label:
         UPDATE_1 probs_state_R, pbPos_R, IsRep0Long
         jmp     len_decode
 
-MY_ALIGN_16
+MY_ALIGN_32
 IsRepG0_label:
         UPDATE_1 probs_state_R, 0, IsRepG0
         mov     dist2, LOC rep0
@@ -1167,7 +1174,7 @@ IsRepG0_label:
         mov     LOC rep0, dist
         jmp     len_decode
         
-MY_ALIGN_16
+; MY_ALIGN_32
 IsRepG1_label:
         UPDATE_1 probs_state_R, 0, IsRepG1
         mov     dist2, LOC rep2
@@ -1177,7 +1184,7 @@ IsRepG1_label:
         mov     LOC rep0, dist2
         jmp     len_decode
 
-MY_ALIGN_16
+; MY_ALIGN_32
 IsRepG2_label:
         UPDATE_1 probs_state_R, 0, IsRepG2
         mov     dist, LOC rep3
@@ -1189,7 +1196,7 @@ IsRepG2_label:
 
 ; ---------- SPEC SHORT DISTANCE ----------
 
-MY_ALIGN_16
+MY_ALIGN_32
 short_dist:
         sub     x1, 32 + 1
         jbe     decode_dist_end
@@ -1197,7 +1204,7 @@ short_dist:
         shl     sym, x1_L
         lea     sym_R, [probs + sym_R * PMULT + SpecPos * PMULT + 1 * PMULT]
         mov     sym2, PMULT ; step
-MY_ALIGN_16
+MY_ALIGN_32
 spec_loop:
         REV_1_VAR x2
         dec     x1
@@ -1237,14 +1244,33 @@ copy_match_cross:
 
 
 
-fin_ERROR:
+fin_dicPos_LIMIT:
+        mov     LOC remainLen, sym
+        jmp     fin_OK
+
+fin_ERROR_MATCH_DIST:
+        ; a match distance past the dictionary: save the state the C caller reads
+        ; and mark the error in remainLen with kMatchSpecLen_Error_Data
+        add     len_temp, kMatchSpecLen_Error_Data
         mov     LOC remainLen, len_temp
+
+        mov     LOC rep0, sym
+        mov     LOC rep1, t1
+        mov     LOC rep2, x1
+        mov     LOC rep3, x2
+
+        ; state = (state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3;
+        cmp     state, (kNumStates + kNumLitStates) * PMULT
+        mov     state, kNumLitStates * PMULT
+        mov     t0, (kNumLitStates + 3) * PMULT
+        cmovae  state, t0
+
         mov     sym, 1
         jmp     fin
 
 end_of_payload:
-        cmp     sym, 0FFFFFFFFh ; -1
-        jne     fin_ERROR
+        inc     sym
+        jnz     fin_ERROR_MATCH_DIST
 
         mov     LOC remainLen, kMatchSpecLenStart
         sub     state, kNumStates * PMULT
