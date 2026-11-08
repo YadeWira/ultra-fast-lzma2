@@ -98,10 +98,12 @@ jobs:
 
   macos:
     name: macos arm64
-    # macos-14 runners are Apple Silicon (ARM64). The build selects the ARM64
-    # assembler decoder, whose source carries the Mach-O symbol name, and links
-    # the shared library as a .dylib with -install_name.
-    runs-on: macos-14
+    # macos-latest is Apple Silicon (ARM64); the explicit macos-14 label was
+    # retired from GitHub Actions on 2026-11-02 and its jobs are cancelled
+    # without a runner. The build selects the ARM64 assembler decoder, whose
+    # source carries the Mach-O symbol name, and links the shared library as a
+    # .dylib with -install_name.
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
