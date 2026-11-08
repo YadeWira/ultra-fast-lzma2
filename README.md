@@ -106,6 +106,26 @@ Radyx file archiver. An earlier version was released in the 7-Zip forks linked a
 considered suitable for production environments. However, no warranty or fitness for a particular
 purpose is expressed or implied.
 
+Changes in v1.6.5:
+
+- Fixed a crash in `UF2_cancelDStream()`. A single-threaded stream has no
+  multithreaded decoder state, and setting a timeout created the decompression
+  thread anyway, so cancelling such a stream dereferenced a NULL pointer.
+- The .xz hardware-CRC detection state is read and written atomically; the
+  plain `volatile int` was a data race that ThreadSanitizer reported.
+- The file-list utility no longer leaks the path of a skipped symbolic link, and
+  a failed reallocation no longer loses the buffer it was growing.
+- The shared library is built with hidden visibility and exports only the
+  `UF2_*` API; its 126 internal symbols are no longer visible. No public symbol
+  was removed.
+- The x86-64 assembler LZMA decoder is the 2024 body from LZMA SDK 26.06,
+  adapted to this library: a full output during a match copy stops with success
+  instead of corruption, and an invalid match distance saves the decoder state
+  before reporting the error.
+
+The compressed bytes are unchanged at every level from 1 to 11, in both the
+native and the .xz formats.
+
 Changes in v1.6.4:
 
 - A compression level above the maximum (`UF2_maxCLevel()`, which is 11) now clamps to the maximum
