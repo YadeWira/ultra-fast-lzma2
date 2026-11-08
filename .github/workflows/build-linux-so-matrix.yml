@@ -29,11 +29,6 @@ jobs:
             cflags: -Wall -O2 -pthread -fPIC
             x86_64: "0"
             packages: gcc-aarch64-linux-gnu
-          - rid: linux-arm
-            cc: arm-linux-gnueabihf-gcc
-            cflags: -Wall -O2 -pthread -fPIC
-            x86_64: "0"
-            packages: gcc-arm-linux-gnueabihf
 
     steps:
       - name: Checkout
@@ -73,63 +68,6 @@ jobs:
           path: dist/${{ matrix.rid }}
           if-no-files-found: error
 
-  build-linux-musl:
-    name: musl-${{ matrix.rid }}
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - rid: linux-musl-x64
-            target: x86_64-linux-musl
-          - rid: linux-musl-arm64
-            target: aarch64-linux-musl
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.13.0
-
-      - name: Build shared library (musl)
-        run: |
-          rm -rf dist
-          rm -f *.o *.d libuf-lzma2.so.1.0 libuf-lzma2.a
-
-          SOURCES="dict_buffer.c uf2_common.c uf2_compress.c uf2_decompress.c uf2_pool.c uf2_threading.c uf2_xz.c lzma2_dec.c lzma2_enc.c radix_bitpack.c radix_mf.c radix_struct.c range_enc.c util.c xxhash.c"
-
-          zig cc \
-            -target ${{ matrix.target }} \
-            -shared \
-            -O2 \
-            -fPIC \
-            -D_GNU_SOURCE \
-            -o libuf-lzma2.so.1.0 \
-            $SOURCES
-
-      - name: Prepare RID layout
-        run: |
-          set -e
-          out="dist/${{ matrix.rid }}/runtimes/${{ matrix.rid }}/native"
-          mkdir -p "$out"
-
-          cp libuf-lzma2.so.1.0 "$out/libuf-lzma2.so.1.0"
-          ln -sf libuf-lzma2.so.1.0 "$out/libuf-lzma2.so.1"
-          ln -sf libuf-lzma2.so.1.0 "$out/libuf-lzma2.so"
-
-          mkdir -p "dist/${{ matrix.rid }}/include"
-          cp uf-lzma2.h uf2_errors.h "dist/${{ matrix.rid }}/include/"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: uf-lzma2-${{ matrix.rid }}
-          path: dist/${{ matrix.rid }}
-          if-no-files-found: error
-
   build-windows:
     name: windows-${{ matrix.rid }}
     runs-on: windows-2022
@@ -141,8 +79,6 @@ jobs:
             platform: x64
           - rid: win-x86
             platform: Win32
-          - rid: win-arm64
-            platform: ARM64
 
     steps:
       - name: Checkout
@@ -179,7 +115,6 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - build-linux-glibc
-      - build-linux-musl
       - build-windows
 
     steps:
