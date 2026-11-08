@@ -49,6 +49,17 @@ jobs:
       - name: Build and check
         run: ${{ matrix.make }}
 
+  fast-lzma2:
+    name: fast-lzma2 (linux x86_64)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build and test
+        run: make -C fast-lzma2 test
+
   windows:
     name: ${{ matrix.name }}
     runs-on: windows-2022
