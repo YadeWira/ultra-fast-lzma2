@@ -688,6 +688,9 @@
 
 # MY_ALIGN_64
 		.balign 16, 0x90
+#if defined(__ELF__)
+		.hidden LZMA_decodeReal_3
+#endif
 		.global LZMA_decodeReal_3
 LZMA_decodeReal_3:
 MY_PUSH_PRESERVED_REGS

@@ -1139,7 +1139,10 @@ FL2LIB_API size_t FL2LIB_CALL FL2_waitDStream(FL2_DStream * fds)
 FL2LIB_API void FL2LIB_CALL FL2_cancelDStream(FL2_DStream *fds)
 {
 #ifndef FL2_SINGLETHREAD
-    if (fds->decompressThread != NULL) {
+    /* decmt exists only when the stream was created with more than one thread.
+       A single-threaded stream may still have a decompressThread here (a timeout
+       creates one), and it must not dereference a NULL decmt. */
+    if (fds->decompressThread != NULL && fds->decmt != NULL) {
         fds->decmt->canceled = 1;
 
         FL2POOL_waitAll(fds->decompressThread, 0);

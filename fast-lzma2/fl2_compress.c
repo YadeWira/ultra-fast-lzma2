@@ -164,8 +164,10 @@ static FL2_CCtx* FL2_createCCtx_internal(unsigned nbThreads, int const dualBuffe
     }
     if (dualBuffer) {
       cctx->compressThread = FL2POOL_create(1);
-      if (cctx->compressThread == NULL)
+      if (cctx->compressThread == NULL) {
+        FL2_freeCCtx(cctx);
         return NULL;
+      }
     }
 #endif
 

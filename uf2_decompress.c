@@ -2004,7 +2004,10 @@ UF2LIB_API size_t UF2LIB_CALL UF2_waitDStream(UF2_DStream * fds)
 
 UF2LIB_API void UF2LIB_CALL UF2_cancelDStream(UF2_DStream *fds)
 {
-    if (fds->decompressThread != NULL) {
+    /* decmt exists only when the stream was created with more than one thread.
+       A single-threaded stream may still have a decompressThread here (a timeout
+       creates one), and it must not dereference a NULL decmt. */
+    if (fds->decompressThread != NULL && fds->decmt != NULL) {
         fds->decmt->canceled = 1;
 
         UF2POOL_waitAll(fds->decompressThread, 0);

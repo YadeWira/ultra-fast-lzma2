@@ -226,15 +226,25 @@ static size_t XZ_foldHw(U64 reg, const BYTE *p, size_t size, const U64 K[4], BYT
 
 #ifdef XZ_HW_CRC
 /* 0 not yet known, 1 absent, 2 present. Any thread that finds it unknown runs
- * the detection and stores the same answer, so a race only repeats the work. */
-static volatile int XZ_hwState = 0;
+ * the detection and stores the same answer, so a race only repeats the work.
+ * The accesses are still atomic: a plain int would be a data race under the C
+ * memory model, and ThreadSanitizer reports it. */
+#if defined(_MSC_VER) && !defined(__clang__)
+static volatile long XZ_hwState = 0;
+#  define XZ_HW_LOAD(p)     _InterlockedCompareExchange((volatile long *)(p), 0, 0)
+#  define XZ_HW_STORE(p, v) _InterlockedExchange((volatile long *)(p), (long)(v))
+#else
+static int XZ_hwState = 0;
+#  define XZ_HW_LOAD(p)     __atomic_load_n((p), __ATOMIC_RELAXED)
+#  define XZ_HW_STORE(p, v) __atomic_store_n((p), (v), __ATOMIC_RELAXED)
+#endif
 
 static int XZ_hwAvailable(void)
 {
-    int state = XZ_hwState;
+    int state = XZ_HW_LOAD(&XZ_hwState);
     if (state == 0) {
         state = XZ_hwDetect() ? 2 : 1;
-        XZ_hwState = state;
+        XZ_HW_STORE(&XZ_hwState, state);
     }
     return state == 2;
 }

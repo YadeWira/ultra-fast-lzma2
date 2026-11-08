@@ -236,6 +236,7 @@ int UTIL_prepareFileList(const char *dirName, char** bufStart, size_t* pos, char
 
         if (!followLinks && UTIL_isLink(path)) {
             UTIL_DISPLAYLEVEL(2, "Warning : %s is a symbolic link, ignoring\n", path);
+            free(path);
             continue;
         }
 
@@ -245,9 +246,10 @@ int UTIL_prepareFileList(const char *dirName, char** bufStart, size_t* pos, char
         } else {
             if (*bufStart + *pos + pathLength >= *bufEnd) {
                 ptrdiff_t newListSize = (*bufEnd - *bufStart) + LIST_SIZE_INCREASE;
-                *bufStart = (char*)UTIL_realloc(*bufStart, newListSize);
-                *bufEnd = *bufStart + newListSize;
-                if (*bufStart == NULL) { free(path); closedir(dir); return 0; }
+                char* const newStart = (char*)UTIL_realloc(*bufStart, newListSize);
+                if (newStart == NULL) { free(path); closedir(dir); return 0; }
+                *bufStart = newStart;
+                *bufEnd = newStart + newListSize;
             }
             if (*bufStart + *pos + pathLength < *bufEnd) {
                 memcpy(*bufStart + *pos, path, pathLength + 1);  /* with final \0 */

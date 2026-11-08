@@ -3,6 +3,7 @@ Based upon LzmaDec.c 2018-02-28 : Igor Pavlov : Public domain
 Modified for FL2 by Conor McCarthy */
 
 #include <stdlib.h>
+#include <stddef.h>
 #include "fl2_errors.h"
 #include "fl2_internal.h"
 #include "lzma2_dec.h"
@@ -366,6 +367,32 @@ Out:
 */
 
 #ifdef LZMA2_DEC_OPT
+
+/* The asm decoders hard-code these offsets into LZMA2_DCtx. Adding, removing or
+   reordering a field above `probs` silently corrupts them, so check here. */
+#define FL2_CHECK_ASM_OFFSET(field, expect) \
+    FL2_STATIC_ASSERT(offsetof(LZMA2_DCtx, field) == (expect))
+
+MEM_STATIC void LZMA_checkAsmOffsets(void)
+{
+    FL2_CHECK_ASM_OFFSET(prop.lc,         0);
+    FL2_CHECK_ASM_OFFSET(prop.lp,         1);
+    FL2_CHECK_ASM_OFFSET(prop.pb,         2);
+    FL2_CHECK_ASM_OFFSET(prop.dic_size,   4);
+    FL2_CHECK_ASM_OFFSET(dic,             8);
+    FL2_CHECK_ASM_OFFSET(dic_pos,        16);
+    FL2_CHECK_ASM_OFFSET(dic_buf_size,   24);
+    FL2_CHECK_ASM_OFFSET(buf,            32);
+    FL2_CHECK_ASM_OFFSET(probs_1664,     40);
+    FL2_CHECK_ASM_OFFSET(range,          48);
+    FL2_CHECK_ASM_OFFSET(code,           52);
+    FL2_CHECK_ASM_OFFSET(processed_pos,  56);
+    FL2_CHECK_ASM_OFFSET(check_dic_size, 60);
+    FL2_CHECK_ASM_OFFSET(reps,           64);
+    FL2_CHECK_ASM_OFFSET(state,          80);
+    FL2_CHECK_ASM_OFFSET(state2,         84);
+    FL2_CHECK_ASM_OFFSET(remain_len,     88);
+}
 
 int LZMA_decodeReal_3(LZMA2_DCtx *p, size_t limit, const BYTE *buf_limit);
 

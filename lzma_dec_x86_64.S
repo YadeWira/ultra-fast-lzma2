@@ -571,6 +571,7 @@
 
 .equ kMatchMinLen, 2
 .equ kMatchSpecLenStart, (kMatchMinLen + kLenNumLowSymbols * 2 + kLenNumHighSymbols)
+.equ kMatchSpecLen_Error_Data, (1 << 9)
 
 .equ kStartOffset, 1664
 .equ SpecPos, (-kStartOffset)
@@ -688,6 +689,9 @@
 
 # MY_ALIGN_64
 		.balign 16, 0x90
+#if defined(__ELF__)
+		.hidden LZMA_decodeReal_3
+#endif
 		.global LZMA_decodeReal_3
 LZMA_decodeReal_3:
 MY_PUSH_PRESERVED_REGS
@@ -970,6 +974,10 @@ decode_dist_end:
 
         ## if (distance >= (checkDicSize == 0 ? processedPos: checkDicSize))
 
+        mov     t1, [LOC + rep0_Loc]
+        mov     x1, [LOC + rep1_Loc]
+        mov     x2, [LOC + rep2_Loc]
+
         mov     t0, [LOC + checkDicSize_Loc]
         test    t0, t0
         cmove   t0, processedPos
@@ -982,15 +990,11 @@ decode_dist_end:
         # rep0 = distance + 1#
 
         inc     sym
-        mov     t0, [LOC + rep0_Loc]
-        mov     t1, [LOC + rep1_Loc]
-        mov     x1, [LOC + rep2_Loc]
         mov     [LOC + rep0_Loc], sym
-        # mov     sym, [LOC + remainLen_Loc]
         mov     sym, len_temp
-        mov     [LOC + rep1_Loc], t0
-        mov     [LOC + rep2_Loc], t1
-        mov     [LOC + rep3_Loc], x1
+        mov     [LOC + rep1_Loc], t1
+        mov     [LOC + rep2_Loc], x1
+        mov     [LOC + rep3_Loc], x2
         
         # state = (state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3#
         cmp     state, (kNumStates + kNumLitStates) * PMULT
@@ -1012,7 +1016,7 @@ copy_match:
         # }
         mov     cnt_R, [LOC + limit]
         sub     cnt_R, dicPos
-        jz      fin_ERROR
+        jz      fin_dicPos_LIMIT
 
         # curLen = ((rem < len) ? (unsigned)rem : len)#
         cmp     cnt_R, sym_R
@@ -1169,9 +1173,11 @@ IsRep0Short_label:
         sub     t0_R, dic
         
         sub     probs, RepLenCoder * PMULT
-        inc     processedPos
+
         # state = state < kNumLitStates ? 9 : 11#
         or      state, 1 * PMULT
+
+        inc     processedPos
         IsMatchBranch_Pre
        
         sub     t0_R, probBranch_R
@@ -1288,15 +1294,33 @@ copy_match_cross:
 
 
 
-fin_ERROR:
+fin_dicPos_LIMIT:
+        mov     [LOC + remainLen_Loc], sym
+        jmp     fin_OK
+
+fin_ERROR_MATCH_DIST:
+        # a match distance past the dictionary: save the state the C caller reads
+        # and mark the error in remainLen with kMatchSpecLen_Error_Data
+        add     len_temp, kMatchSpecLen_Error_Data
         mov     [LOC + remainLen_Loc], len_temp
-# fin_ERROR_2:
+
+        mov     [LOC + rep0_Loc], sym
+        mov     [LOC + rep1_Loc], t1
+        mov     [LOC + rep2_Loc], x1
+        mov     [LOC + rep3_Loc], x2
+
+        # state = (state < kNumStates + kNumLitStates) ? kNumLitStates : kNumLitStates + 3#
+        cmp     state, (kNumStates + kNumLitStates) * PMULT
+        mov     state, kNumLitStates * PMULT
+        mov     t0, (kNumLitStates + 3) * PMULT
+        cmovae  state, t0
+
         mov     sym, 1
         jmp     fin
 
 end_of_payload:
-        cmp     sym, 0xFFFFFFFF # -1
-        jne     fin_ERROR
+        inc     sym
+        jnz     fin_ERROR_MATCH_DIST
 
         mov     dword ptr[LOC + remainLen_Loc], kMatchSpecLenStart
         sub     state, kNumStates * PMULT

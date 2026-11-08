@@ -210,6 +210,9 @@ arm64 and arm use reverted c flag after subs/cmp instructions:
 #ifdef __APPLE__
         .globl _LZMA_decodeReal_3
 #else        
+#if defined(__ELF__)
+        .hidden LZMA_decodeReal_3
+#endif
 	.global LZMA_decodeReal_3
 #endif        
 	// .type LZMA_decodeReal_3, %function
